@@ -87,27 +87,29 @@ Caddyfile routes `home.nthncrtr.com` → `:3000`.
 - `docker compose down && docker start homepage_old`.
 - Restore `/srv/homepage/config` from backup if config files were moved.
 
-### 1.7 Pin Docker data paths to /srv/<service>/
+### 1.7 Pin Docker data paths to /srv/<service>/  [PARTIAL — Navidrome + Homepage done; Pi-hole pending]
 
-Convert any anonymous Docker volumes to bind mounts under `/srv/<service>/`. Pi-hole already binds to `/home/nthncrtr/docker/pihole/...` — decide whether to move those too for consistency, or scope this mission to anonymous volumes only.
+Discovery showed no anonymous Docker volumes existed (all services already used host bind paths under `/home/nthncrtr/<svc>/`). Decision: relocate to `/srv/<svc>/` for convention, with both compose file and data co-located per service so relative `./<dir>` binds keep working. Notable: `/srv` is on the same filesystem as `/home/nthncrtr/` (the SD card root, currently 90% full) so the move is `mv` within one fs, not a physical relocation. SD-card pressure is a separate problem worth tracking elsewhere.
 
 **Preconditions:**
-- Missions 1.4–1.6 committed (every container has a compose file).
-- `/srv/` exists on natto and is on a stable filesystem: `ssh natto 'df -h /srv'` shows non-trivial free space (≥10 GB headroom).
-- Each service is currently healthy (URL checks from 1.4–1.6 all pass).
-- For each service, snapshot anonymous volumes: `docker inspect <c> --format '{{json .Mounts}}' | jq` to identify volume sources.
-- Pre-move backup taken: `cp -a $(docker volume inspect <vol> --format '{{.Mountpoint}}') /srv/<service>/.pre-pin-backup-YYYY-MM-DD/`.
+- Missions 1.4–1.6 committed.
+- `/srv/{navidrome,homepage,pihole}` exist on natto (created by sudo mkdir; navidrome and homepage owned by nthncrtr, pihole left root-owned to match the data inside).
+- Each service is healthy via its public URL.
 
 **Success criteria:**
-- For every service, `docker volume inspect` reveals no remaining anonymous volumes attached to its container.
-- Compose files reference absolute bind paths (`/srv/<service>/...` or `/mnt/media/...`), not named/anonymous volumes.
-- `/srv/<service>/` exists and contains the migrated data: `find /srv/<service> -type f | wc -l` matches (within reason) the pre-move file count, and `du -sh` is comparable.
-- All services pass their URL checks after restart with the new mounts.
-- For Pi-hole, if its bind mounts are also moved to `/srv/pihole/`, this is announced and confirmed before execution per CLAUDE.md.
+- For each service: data dir lives under `/srv/<svc>/`, compose file lives at `/srv/<svc>/docker-compose.yml`, container is up and bind-mounting from the new location (verify with `docker inspect <c> --format '{{range .Mounts}}{{.Source}}{{"\n"}}{{end}}'`).
+- Public URL returns 200 (or healthy app-specific status) post-move.
+- For Pi-hole: announced and confirmed before stopping; DNS resolves again within ~30s of `docker compose up -d`.
+- Repo `services/<svc>/docker-compose.yml` matches what's deployed (Navidrome and Homepage need no change since their relative paths work at both old and new locations; Pi-hole compose changes from `./pihole/etc-*` to `./etc-*`).
 
 **Rollback:**
-- `docker compose down`. Revert compose file. Restore data from `/srv/<service>/.pre-pin-backup-YYYY-MM-DD/` (or back to the original anon volume mountpoint). `docker compose up -d`.
-- For Pi-hole specifically: announce the rollback (DNS will blip), then proceed as above.
+- For each service: `cd /srv/<svc> && docker compose down && mv <dir> /home/nthncrtr/<svc>/<dir> && cd /home/nthncrtr/<svc> && docker compose up -d`.
+- For Pi-hole specifically: announce the rollback (DNS blip), then `mv` the etc-pihole and etc-dnsmasq.d back into `/home/nthncrtr/docker/pihole/`, restore the original `pihole-compose.yml` path semantics, `docker compose up -d` from `/home/nthncrtr/docker/`.
+
+**Status:**
+- Navidrome moved to `/srv/navidrome/` — `docker inspect` confirms `/srv/navidrome/data->/data` bind; `https://natto.nthncrtr.com/ping` → 200.
+- Homepage moved to `/srv/homepage/` — `docker inspect` confirms `/srv/homepage/config->/app/config` bind; `https://home.nthncrtr.com` → 200.
+- Pi-hole pending operator confirmation (DNS outage).
 
 ### 1.8 coffee-host capture
 

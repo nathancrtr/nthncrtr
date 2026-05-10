@@ -1,0 +1,39 @@
+[Unit]
+Description=Starmaya web server (HTTP, SSE, SQLite, browser UI)
+After=roaster-daemon.service network-online.target
+Wants=roaster-daemon.service
+
+[Service]
+Type=simple
+User=roaster
+Group=roaster
+
+WorkingDirectory=/opt/starmaya
+ExecStart=/usr/bin/node /opt/starmaya/packages/server/dist/main.js
+
+# Where the SQLite database lives. /var/lib/roaster is created by tmpfiles.d
+# (or manually during setup) and owned by roaster:roaster.
+Environment=ROASTER_DB_PATH=/var/lib/roaster/roasts.db
+Environment=ROASTER_HTTP_PORT=8080
+
+# Restart on any unexpected exit.
+Restart=on-failure
+RestartSec=2s
+
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=roaster-web
+
+# Hardening. Web server needs the network (HTTP listen + tailnet reach)
+# and write access to the database directory and the daemon's socket dir.
+NoNewPrivileges=yes
+PrivateTmp=yes
+ProtectSystem=strict
+ProtectHome=yes
+ReadWritePaths=/var/lib/roaster /run/roaster
+
+# Web server is small but holds SQLite + per-browser SSE buffers.
+MemoryMax=512M
+
+[Install]
+WantedBy=multi-user.target

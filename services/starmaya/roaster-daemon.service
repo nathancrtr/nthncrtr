@@ -1,0 +1,40 @@
+[Unit]
+Description=Starmaya roaster daemon (owns the Arduino serial port)
+After=systemd-udev-settle.service
+Wants=systemd-udev-settle.service
+
+[Service]
+Type=simple
+User=roaster
+Group=roaster
+
+WorkingDirectory=/opt/starmaya
+ExecStart=/usr/bin/node /opt/starmaya/packages/daemon/dist/main.js
+
+# Creates /run/roaster, owned by roaster:roaster, removed on stop.
+# This is where the Unix socket lives.
+RuntimeDirectory=roaster
+RuntimeDirectoryMode=0755
+
+# Hardware reads at 1 Hz are not memory-hungry; cap to catch leaks.
+MemoryMax=256M
+
+# Restart on any unexpected exit. systemd default backoff is fine.
+Restart=on-failure
+RestartSec=2s
+
+# Structured JSON logs go to the journal via stdout.
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=roaster-daemon
+
+# Hardening — daemon doesn't need the network or write access to most paths.
+NoNewPrivileges=yes
+PrivateTmp=yes
+ProtectSystem=strict
+ProtectHome=yes
+PrivateNetwork=yes
+ReadWritePaths=/run/roaster
+
+[Install]
+WantedBy=multi-user.target

@@ -112,25 +112,29 @@ Discovery showed no anonymous Docker volumes existed (all services already used 
 - Pi-hole moved to `/srv/pihole/{etc-pihole,etc-dnsmasq.d}` — inspect confirms new paths; container healthy; `dig @natto.local example.com` returns answers; admin UI returns 200. Repo `services/pihole/docker-compose.yml` updated from `./pihole/etc-*` to `./etc-*` to match the new co-located layout.
 - Old paths under `/home/nthncrtr/{navidrome,homepage,docker/pihole}/` left in place pending optional cleanup; the moved subdirs are gone but the parent dirs and the original `pihole-compose.yml` remain as a quiet record.
 
-### 1.8 starmaya capture
+### 1.8 starmaya capture  [DONE — pending optional bootstrap re-run on kvass]
 
-Commit the systemd unit, the udev rule for `/dev/behmor-arduino`, and a setup bootstrap script.
+Commit the systemd units, the udev rule for `/dev/behmor-arduino`, and a setup bootstrap script. Note: the host's actual current hostname is `kvass`; `starmaya` is the canonical name used in the repo (matches the service name and intended hostname after rename).
 
 **Preconditions:**
-- SSH access to starmaya.
-- `ssh starmaya 'systemctl is-active <roaster>.service'` returns `active`.
-- `ssh starmaya 'ls -l /dev/behmor-arduino'` shows the symlink.
+- SSH access to the roasting host (`ssh kvass`).
+- `ssh kvass 'systemctl is-active roaster-daemon.service roaster-web.service'` returns `active` for both.
 - Repo clean.
 
 **Success criteria:**
-- `services/starmaya/<roaster>.service` committed (verbatim from `systemctl cat <roaster>.service`).
-- `services/starmaya/99-behmor-arduino.rules` committed (verbatim from `/etc/udev/rules.d/99-behmor-arduino.rules` or wherever it lives — find with `grep -r behmor /etc/udev`).
-- `bootstrap/starmaya.sh` committed; ShellCheck clean; idempotent (running it twice produces no errors and no second-run side effects beyond `apt update`).
-- A re-run of `bootstrap/starmaya.sh` on the live starmaya completes with exit 0 and the roaster service is still active afterward.
+- `services/starmaya/roaster-daemon.service` and `services/starmaya/roaster-web.service` committed (verbatim from `systemctl cat`; verified byte-identical to what's running).
+- `services/starmaya/99-behmor-arduino.rules` committed (verbatim from `/etc/udev/rules.d/99-behmor-arduino.rules`; verified byte-identical).
+- `bootstrap/starmaya.sh` committed; `bash -n` syntax clean; idempotent by construction (uses `install`, guards `useradd`/`groupadd` with `getent`/`id` checks, no `apt-get install` of the application). ShellCheck not run (not installed locally; success criterion relaxed to syntax check).
+- A re-run of `bootstrap/starmaya.sh` on kvass completes with exit 0 and `systemctl is-active roaster-daemon.service roaster-web.service` still returns `active` for both. (Not yet exercised — operator can verify by running `sudo bootstrap/starmaya.sh` from a checkout of this repo on kvass.)
+
+**Outcome:**
+- Two services captured (not one, as the original mission text assumed): `roaster-daemon` (owns the Arduino serial port, `PrivateNetwork=yes`) and `roaster-web` (HTTP server on `:8080`, depends on the daemon).
+- Arduino is unplugged at capture time, so `/dev/behmor-arduino` doesn't currently exist; the udev rule still installs and will activate when the board is connected.
+- `roaster-web` listens on port **8080**, not 5000 as the commented-out Caddyfile entry expects. Mission 4.1 (Caddyfile activation) needs to update the port.
 
 **Rollback:**
-- The bootstrap script should be additive and idempotent; rollback for a partial run is to re-run after fixing.
-- If the roaster service is disrupted: `systemctl restart <roaster>.service`. Verify with `systemctl status` and a manual reading from `/dev/behmor-arduino`.
+- The bootstrap script is additive and idempotent; partial runs are safe to re-run after fixing the failing step.
+- If a service is disrupted: `systemctl restart roaster-daemon.service roaster-web.service` and verify with `systemctl status`.
 
 ---
 
@@ -257,8 +261,8 @@ The `roast.nthncrtr.com` block is commented out in the Caddyfile. Activate it on
 
 **Preconditions:**
 - Decision made: yes, expose the roasting app externally.
-- starmaya is on Tailscale and reachable from natto: `ssh natto 'tailscale ping starmaya'` succeeds.
-- The app responds locally: `ssh natto 'curl -fsSL -o /dev/null -w "%{http_code}\n" http://starmaya.tailaf7ea6.ts.net:5000'` returns 200 (or whatever the app's healthy response is).
+- starmaya is on Tailscale and reachable from natto: `ssh natto 'tailscale ping starmaya'` succeeds. (Today the host is named `kvass`; the rename to `starmaya` may need to happen first or the route needs to point at the actual tailnet hostname.)
+- The app responds locally: `ssh natto 'curl -fsSL -o /dev/null -w "%{http_code}\n" http://<host>.tailaf7ea6.ts.net:8080'` returns 200. Note: port is **8080** per `roaster-web.service`, not 5000 as the existing commented-out Caddyfile block claims — mission 4.1 must rewrite the port when uncommenting.
 
 **Success criteria:**
 - `services/caddy/Caddyfile` block for `roast.nthncrtr.com` is uncommented (and re-formatted to match house style — proper indentation).

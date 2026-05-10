@@ -1,0 +1,29 @@
+# Stable symlink for the Behmor's Arduino+MAX31855 rig.
+#
+# Find your specific board's USB IDs on the Pi with:
+#   lsusb
+# (genuine Arduino Uno: 2341:0043; older Uno: 2341:0001;
+#  CH340-based clone: 1a86:7523; FTDI clone: 0403:6001)
+#
+# After editing this file, install with:
+#   sudo cp deploy/udev/99-behmor-arduino.rules /etc/udev/rules.d/
+#   sudo udevadm control --reload-rules
+#   sudo udevadm trigger
+# Then unplug and replug the Arduino. Verify:
+#   ls -l /dev/behmor-arduino
+
+# Genuine Arduino Uno R3
+SUBSYSTEM=="tty", ATTRS{idVendor}=="2341", ATTRS{idProduct}=="0043", SYMLINK+="behmor-arduino"
+
+# Genuine Arduino Uno R3 — alternate "dog hunter AG" VID, shipped during
+# the 2014–15 Arduino LLC vs Arduino SRL trademark dispute.
+SUBSYSTEM=="tty", ATTRS{idVendor}=="2a03", ATTRS{idProduct}=="0043", SYMLINK+="behmor-arduino"
+
+# Older Arduino Uno
+SUBSYSTEM=="tty", ATTRS{idVendor}=="2341", ATTRS{idProduct}=="0001", SYMLINK+="behmor-arduino"
+
+# Common Uno-compatible clones (CH340 USB-to-serial)
+SUBSYSTEM=="tty", ATTRS{idVendor}=="1a86", ATTRS{idProduct}=="7523", SYMLINK+="behmor-arduino"
+
+# FTDI-based clones (FT232RL)
+SUBSYSTEM=="tty", ATTRS{idVendor}=="0403", ATTRS{idProduct}=="6001", SYMLINK+="behmor-arduino"

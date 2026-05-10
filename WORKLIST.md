@@ -283,7 +283,7 @@ Reorganize the dashboard around hosts and add the "links I'll need someday" pane
 
 ## Phase 4 — Outstanding cleanup
 
-### 4.1 Coffee app Caddyfile route
+### 4.1 Coffee app Caddyfile route  [PARTIAL — stub corrected, awaiting kvass on tailnet]
 
 The `roast.nthncrtr.com` block is commented out in the Caddyfile. Activate it once the roasting app is ready for external access.
 
@@ -298,10 +298,14 @@ The `roast.nthncrtr.com` block is commented out in the Caddyfile. Activate it on
 - After deploying to natto and `caddy reload`: no errors in `journalctl -u caddy -n 50`.
 - `curl -fsSL https://roast.nthncrtr.com/<known-path>` returns the expected response.
 
+**Outcome (partial):**
+- Updated the commented-out `roast.nthncrtr.com` block in `services/caddy/Caddyfile` to reflect known truth: port 5000 → 8080 (matches `roaster-web.service`), hostname is a `<kvass-on-tailnet>` placeholder, and a comment explains the blocker.
+- Activation pending: kvass needs to join natto's tailnet (currently natto sees only natto + kraut). Once it does, replace the placeholder with the real tailnet hostname, uncomment the block, push to natto, `caddy reload`.
+
 **Rollback:**
 - Re-comment the block in the Caddyfile. `caddy validate`. Push to natto. `caddy reload`.
 
-### 4.2 Jellyfin Caddyfile route — deploy or remove stub
+### 4.2 Jellyfin Caddyfile route — deploy or remove stub  [DONE — stub removed]
 
 The commented `jellyfin.nthncrtr.com` block in the Caddyfile is a smell. Either deploy Jellyfin or delete the stub.
 
@@ -318,6 +322,8 @@ The commented `jellyfin.nthncrtr.com` block in the Caddyfile is a smell. Either 
 **Success criteria — remove path:**
 - The commented `jellyfin.nthncrtr.com` block is deleted entirely from `services/caddy/Caddyfile`.
 - `caddy validate` passes.
+
+**Outcome:** Stub removed. Caddyfile parses clean (`caddy adapt` on natto returns valid JSON; format warning on the `:443 abort` block was a tab/space issue, also fixed).
 
 **Rollback:**
 - Revert the Caddyfile change. If a Jellyfin container was started, `docker compose down && docker volume rm <vols>` if disposable; otherwise leave it stopped pending re-decision.

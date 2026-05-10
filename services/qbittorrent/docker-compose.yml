@@ -1,0 +1,30 @@
+# STUB — not yet deployed. The torrent.nthncrtr.com Caddyfile route
+# already proxies to natto:8080, so bringing this up will activate it.
+#
+# Before first run on natto:
+#   mkdir -p /srv/qbittorrent/{config,downloads}
+#   docker compose -f /srv/qbittorrent/docker-compose.yml up -d
+#   docker logs qbittorrent | grep -i "webui password"   # one-time temp pw
+# Then log in at https://torrent.nthncrtr.com, change the admin password,
+# and (recommended) restrict the WebUI to LAN-only via Settings → Web UI.
+#
+# Ports:
+#   8080 — WebUI (matches Caddyfile)
+#   6881 tcp+udp — torrent peer port (open in firewall if seeding externally)
+services:
+  qbittorrent:
+    image: lscr.io/linuxserver/qbittorrent:latest
+    container_name: qbittorrent
+    environment:
+      - PUID=1000
+      - PGID=1000
+      - TZ=America/New_York
+      - WEBUI_PORT=8080
+    volumes:
+      - ./config:/config
+      - ./downloads:/downloads
+    ports:
+      - "8080:8080"
+      - "6881:6881"
+      - "6881:6881/udp"
+    restart: unless-stopped

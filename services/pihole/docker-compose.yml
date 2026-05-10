@@ -1,0 +1,15 @@
+services:
+  pihole:
+    container_name: pihole
+    image: pihole/pihole:latest
+    network_mode: bridge   # ← explicitly use the default docker0 bridge
+    ports:
+      - "53:53/tcp"
+      - "53:53/udp"
+      - "8053:80"
+    environment:
+      TZ: "America/New_York"
+    volumes:
+      - "./pihole/etc-pihole:/etc/pihole"
+      - "./pihole/etc-dnsmasq.d:/etc/dnsmasq.d"
+    restart: unless-stopped

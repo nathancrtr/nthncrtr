@@ -23,11 +23,10 @@ torrent.nthncrtr.com {
 	reverse_proxy natto.tailaf7ea6.ts.net:8080
 }
 
-# Coffee roasting app — blocked on getting starmaya/kvass onto the tailnet.
-# Note: roaster-web listens on :8080, not :5000.
-#starmaya.nthncrtr.com {
-#	reverse_proxy <kvass-on-tailnet>:8080
-#}
+# Coffee roasting app — roaster-web on kvass:8080.
+starmaya.nthncrtr.com {
+	reverse_proxy kvass.tailaf7ea6.ts.net:8080
+}
 
 :443 {
 	abort

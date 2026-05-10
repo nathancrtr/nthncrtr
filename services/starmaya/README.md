@@ -46,4 +46,4 @@ Installs the `roaster` system user, creates `/var/lib/roaster/`, copies the udev
 
 ## Tailnet status
 
-kvass is **not** on natto's tailnet today (mission 4.1 is blocked on this). To activate the `starmaya.nthncrtr.com` Caddyfile route, kvass needs to join the tailnet first.
+kvass is on natto's tailnet as `kvass.tailaf7ea6.ts.net`. The `starmaya.nthncrtr.com` Caddyfile route on natto reverse-proxies to it at port 8080.

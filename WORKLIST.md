@@ -283,27 +283,28 @@ Reorganize the dashboard around hosts and add the "links I'll need someday" pane
 
 ## Phase 4 — Outstanding cleanup
 
-### 4.1 Coffee app Caddyfile route  [PARTIAL — stub corrected, awaiting kvass on tailnet]
+### 4.1 Coffee app Caddyfile route  [DONE]
 
-The `starmaya.nthncrtr.com` block is commented out in the Caddyfile. Activate it once the roasting app is ready for external access.
+External access to the coffee roasting app at `https://starmaya.nthncrtr.com`.
 
-**Preconditions:**
+**Preconditions (all met):**
 - Decision made: yes, expose the roasting app externally.
-- starmaya is on Tailscale and reachable from natto: `ssh natto 'tailscale ping starmaya'` succeeds. (Today the host is named `kvass`; the rename to `starmaya` may need to happen first or the route needs to point at the actual tailnet hostname.)
-- The app responds locally: `ssh natto 'curl -fsSL -o /dev/null -w "%{http_code}\n" http://<host>.tailaf7ea6.ts.net:8080'` returns 200. Note: port is **8080** per `roaster-web.service`, not 5000 as the existing commented-out Caddyfile block claims — mission 4.1 must rewrite the port when uncommenting.
+- kvass is on natto's tailnet as `kvass.tailaf7ea6.ts.net` (joined between sessions; visible in `ssh natto 'tailscale status'`).
+- The app responds via tailnet: `ssh natto 'curl -fsSL -o /dev/null -w "%{http_code}\n" http://kvass.tailaf7ea6.ts.net:8080'` returns 200.
 
-**Success criteria:**
-- `services/caddy/Caddyfile` block for `starmaya.nthncrtr.com` is uncommented (and re-formatted to match house style — proper indentation).
-- `caddy validate --config services/caddy/Caddyfile` passes locally.
-- After deploying to natto and `caddy reload`: no errors in `journalctl -u caddy -n 50`.
-- `curl -fsSL https://starmaya.nthncrtr.com/<known-path>` returns the expected response.
+**Success criteria (all met):**
+- `services/caddy/Caddyfile` block for `starmaya.nthncrtr.com` is uncommented and reverse-proxies to `kvass.tailaf7ea6.ts.net:8080`.
+- `caddy adapt` passes against the new Caddyfile.
+- After deploying to natto and `systemctl reload caddy`: cert provisioned via DNS-01 in ~9s, no errors in `journalctl -u caddy`.
+- `curl -fsSL https://starmaya.nthncrtr.com` returns the React app HTML (`<title>Starmaya — Roast Logger</title>`).
 
-**Outcome (partial):**
-- Updated the commented-out `starmaya.nthncrtr.com` block in `services/caddy/Caddyfile` to reflect known truth: port 5000 → 8080 (matches `roaster-web.service`), hostname is a `<kvass-on-tailnet>` placeholder, and a comment explains the blocker.
-- Activation pending: kvass needs to join natto's tailnet (currently natto sees only natto + kraut). Once it does, replace the placeholder with the real tailnet hostname, uncomment the block, push to natto, `caddy reload`.
+**Outcome:**
+- Cloudflare A record for `starmaya.nthncrtr.com` set to natto's tailnet IP (`100.110.225.55`), matching the `*.nthncrtr.com → natto → Caddy → backend` pattern used by every other route.
+- Caddyfile block uncommented in `services/caddy/Caddyfile` and deployed to `/etc/caddy/Caddyfile` on natto via the sudo-clipboard pattern; `systemctl reload caddy` triggered automatic cert provisioning via Cloudflare DNS-01.
+- The same deploy also picked up two prior unpushed repo changes: removal of the old `roast.nthncrtr.com` stub and removal of the Jellyfin stub from mission 4.2 (which had only been done in the repo, never on natto).
 
 **Rollback:**
-- Re-comment the block in the Caddyfile. `caddy validate`. Push to natto. `caddy reload`.
+- Re-comment the block in `services/caddy/Caddyfile`. `caddy adapt` to validate. Push to natto. `systemctl reload caddy`.
 
 ### 4.2 Jellyfin Caddyfile route — deploy or remove stub  [DONE — stub removed]
 

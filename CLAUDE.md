@@ -7,7 +7,7 @@ You are working in the version-controlled config + operational runbook for a sma
 | Host | Hostname | Role | OS / Arch | Services |
 |---|---|---|---|---|
 | **natto** | `natto` | Hub | Raspberry Pi, arm64, Debian 13 | Caddy (native, systemd), Pi-hole, Navidrome, Homepage, qBittorrent (stub) — all docker-managed compose projects |
-| **starmaya** | `kvass` (machine), `starmaya` (canonical) | Workshop appliance | Raspberry Pi, arm64, Debian 13 | `roaster-daemon` + `roaster-web` (Node.js, native systemd). NOT currently on the tailnet. |
+| **starmaya** | `kvass` (machine), `starmaya` (canonical) | Workshop appliance | Raspberry Pi, arm64, Debian 13 | `roaster-daemon` + `roaster-web` (Node.js, native systemd). On natto's tailnet as `kvass.tailaf7ea6.ts.net`. |
 | **workhorse** | `workhorse` | Client + dev | Intel Mac | Tailscale only — hosts no services. This is where you typically run from. |
 
 External access flow: `*.nthncrtr.com` → Cloudflare DNS (DNS-01 challenge token in `caddy.env`) → Tailscale IP of natto → Caddy on natto → local service.
@@ -120,7 +120,7 @@ Caddy's secret (`CF_API_TOKEN`) lives at `/etc/caddy/caddy.env` (mode 0600, owne
 
 ### Reaching kvass
 
-kvass is **not on natto's tailnet** as of the last session. From workhorse you can `ssh kvass` (LAN), but from natto you cannot. Until kvass joins the tailnet, anything that requires natto-to-kvass network reach (e.g. activating the `starmaya.nthncrtr.com` Caddyfile route, mission 4.1) is blocked.
+kvass is on natto's tailnet as `kvass.tailaf7ea6.ts.net` (IP `100.65.46.92`). From workhorse, `ssh kvass` works over the LAN. From natto, use the tailnet hostname — e.g. `curl http://kvass.tailaf7ea6.ts.net:8080` is the roaster-web HTTP endpoint that backs `starmaya.nthncrtr.com`.
 
 ## Where to look for what
 
@@ -133,7 +133,6 @@ kvass is **not on natto's tailnet** as of the last session. From workhorse you c
 ## Things NOT to do
 
 - Don't try `sudo` over SSH non-interactively to natto. Use the clipboard pattern.
-- Don't try to reach kvass from natto. It's not on the tailnet yet.
 - Don't `caddy validate` for syntax checks — use `caddy adapt`.
 - Don't commit `secrets.env` (it's gitignored, but always double-check `git status` before committing in `services/homepage/`).
 - Don't restart Pi-hole without operator confirmation.

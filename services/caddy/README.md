@@ -43,5 +43,5 @@ Adding a route: edit `Caddyfile`, validate, push, reload.
 - `natto.nthncrtr.com` → tailnet:4533 (Navidrome)
 - `pi-hole.nthncrtr.com` → 127.0.0.1:8053 (Pi-hole)
 - `torrent.nthncrtr.com` → tailnet:8080 (qBittorrent — stub, no container yet)
-- `starmaya.nthncrtr.com` — commented out, awaiting kvass on the tailnet
+- `starmaya.nthncrtr.com` → tailnet:8080 (roaster-web on kvass)
 - Catchall `:443` aborts (no implicit hosts)

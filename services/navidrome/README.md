@@ -26,6 +26,8 @@ cd /srv/navidrome && docker compose restart
 # Or full rescan: docker exec -it navidrome-navidrome-1 wget -qO- 'http://localhost:4533/api/scanner/scan?fullScan=true'
 ```
 
+If `navidrome.db-wal` grows unbounded (real example: a disk-full incident blocked SQLite checkpoints, leaving a 1.4 GB WAL), the restart above forces a checkpoint and shrinks the WAL back to ~12K. Inspect with `ls -la /srv/navidrome/data/navidrome.db*`.
+
 ## Library layout
 
 The bind mount is `/mnt/media/music:/music:ro`. Navidrome scans `/music` recursively. The library was reorganized in mission 4.3 — see [`runbooks/media-layout.md`](../../runbooks/media-layout.md) for the canonical layout (`/mnt/media/{music,video,backups,_unsorted/}`).

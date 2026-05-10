@@ -122,6 +122,10 @@ Caddy's secret (`CF_API_TOKEN`) lives at `/etc/caddy/caddy.env` (mode 0600, owne
 
 kvass is on natto's tailnet as `kvass.tailaf7ea6.ts.net` (IP `100.65.46.92`). From workhorse, `ssh kvass` works over the LAN. From natto, use the tailnet hostname — e.g. `curl http://kvass.tailaf7ea6.ts.net:8080` is the roaster-web HTTP endpoint that backs `starmaya.nthncrtr.com`.
 
+### When debugging weird state, check disk space first
+
+natto's root fs is a 15G SD card and has hit 100% before. A full disk causes *silent* failures, not loud ones: **pihole-FTL** writes to `pihole.toml` truncate to zero (so it boots from "default config" and wipes upstream DNS), and **Navidrome** SQLite checkpoints can't drain the WAL (multi-GB `navidrome.db-wal` builds up). Both look like a healthy running service that's just behaving wrong. Run `ssh natto 'df -h /'` early in any session that involves degraded state — it'll save you hours of guessing.
+
 ## Where to look for what
 
 - **What was decided** — `WORKLIST.md`. Each mission has Preconditions / Success criteria / Rollback / Outcome. `[DONE]` and `[PARTIAL]` markers are kept up to date.

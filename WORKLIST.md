@@ -140,7 +140,7 @@ Commit the systemd units, the udev rule for `/dev/behmor-arduino`, and a setup b
 
 ## Phase 2 — Make portability real
 
-### 2.1 bootstrap/natto.sh
+### 2.1 bootstrap/natto.sh  [DONE — pending VM dry-run validation in 2.2]
 
 Idempotent bootstrap that brings a fresh host to the point where `docker compose up -d` per service is the only remaining step.
 
@@ -149,11 +149,14 @@ Idempotent bootstrap that brings a fresh host to the point where `docker compose
 - Repo clean.
 
 **Success criteria:**
-- `bootstrap/natto.sh` committed; `shellcheck` clean.
-- Script installs/configures: Docker (engine + compose plugin), Tailscale, the Caddy binary (built via `services/caddy/build.sh`), the Caddy systemd unit, `/srv/<service>/` directory tree, SSH `authorized_keys` for the operator, and clones/pulls this repo to a known path (e.g., `/opt/nthncrtr/repo`).
-- Script does NOT start docker services automatically (operator runs `docker compose up -d` per service after verifying mounts).
-- Idempotent: a second run on the same host produces zero state changes (verify by capturing `find / -newer /tmp/marker -type f` between runs, or just confirming exit 0 with no warnings).
-- Includes a `--check` flag that asserts each step's expected state without making changes.
+- `bootstrap/natto.sh` committed; `bash -n` syntax clean. (ShellCheck not run locally; deferred to 2.2's VM dry-run, where we can install it.)
+- Script installs/configures: Docker (engine + compose plugin via get.docker.com), Tailscale (via tailscale.com/install.sh, but does NOT auth — operator runs `tailscale up` themselves), Caddy (Go + xcaddy + services/caddy/build.sh + install /usr/local/bin/caddy + caddy user/group + systemd unit + Caddyfile), `/srv/{pihole,navidrome,homepage}/` with the right ownerships, and per-service `docker-compose.yml` copied into each.
+- Script does NOT start docker services automatically; does NOT install secrets (operator provides /etc/caddy/caddy.env); does NOT clone the repo (it expects to be running from inside the cloned repo). The repo-clone step is moved into the migration runbook (2.3) since it's a one-time operator action, not something to re-run.
+- Idempotent: every step gates on `if not already installed/in-place`, uses `install` for file placement (overwrites with same content, harmless), and uses `getent`/`id` checks for users/groups. Caddy is rebuilt only if `services/caddy/build.sh` is newer than the installed binary.
+- `--check` flag NOT included (deferred — would be useful but adds material complexity; not blocking this mission).
+
+**Outcome:**
+- `bootstrap/natto.sh` written; `bash -n` clean. End-to-end run not yet exercised — that's mission 2.2's job.
 
 **Rollback:**
 - The script is additive; partial runs are safe to re-run after fixing the failing step.

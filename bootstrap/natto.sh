@@ -1,0 +1,248 @@
+#!/usr/bin/env bash
+# Idempotent bootstrap for natto — the hub that runs Caddy (native) plus Pi-hole,
+# Navidrome, Homepage, and (eventually) qBittorrent in Docker.
+#
+# Run on a fresh Debian/Ubuntu/Raspberry Pi OS host (arm64 expected) as root.
+# The script is idempotent — safe to re-run after a partial run, and a clean
+# second run should be a no-op.
+#
+# What it does:
+#   1. Preflight checks (root, supported distro, arch).
+#   2. Install Docker engine + compose plugin (via get.docker.com).
+#   3. Install Tailscale (via tailscale.com/install.sh).
+#   4. Install Go + xcaddy, build Caddy via services/caddy/build.sh, install to
+#      /usr/local/bin/caddy. Create caddy system user. Install
+#      /etc/caddy/Caddyfile and the systemd unit. Does NOT create caddy.env;
+#      that file holds the Cloudflare API token and must be installed manually.
+#   5. Create /srv/{pihole,navidrome,homepage}/ owned appropriately and copy
+#      services/<svc>/docker-compose.yml into each.
+#   6. Print next steps (provide secrets, restore data, start services).
+#
+# What it does NOT do (intentionally):
+#   - Authenticate Tailscale (operator runs `tailscale up` with their auth key).
+#   - Provide secrets (Cloudflare token, Pi-hole admin password). Operator
+#     populates /etc/caddy/caddy.env and any other secret files manually.
+#   - Start docker services (operator runs `docker compose up -d` per service
+#     after verifying mounts and restoring data from backup).
+#
+# Usage:
+#   sudo bootstrap/natto.sh
+#
+# Optionally: TS_AUTHKEY=tskey-... sudo -E bootstrap/natto.sh   (still leaves
+#   the actual `tailscale up` to you — TS_AUTHKEY is just printed in the
+#   next-steps block so you don't have to look it up.)
+
+set -euo pipefail
+
+REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+
+# ---------------------------------------------------------------------------
+# Logging helpers
+# ---------------------------------------------------------------------------
+log()  { printf '[bootstrap] %s\n' "$*"; }
+skip() { printf '[bootstrap] %s — already in place, skipping\n' "$*"; }
+
+# ---------------------------------------------------------------------------
+# Step 1: preflight
+# ---------------------------------------------------------------------------
+preflight() {
+  if [[ $EUID -ne 0 ]]; then
+    echo "Run as root or via sudo." >&2
+    exit 1
+  fi
+
+  if [[ ! -f /etc/os-release ]]; then
+    echo "Cannot determine OS (no /etc/os-release)." >&2
+    exit 1
+  fi
+  # shellcheck disable=SC1091
+  . /etc/os-release
+  case "${ID:-}" in
+    debian|ubuntu|raspbian) ;;
+    *) echo "Unsupported OS: ${ID:-unknown}. Expected debian/ubuntu/raspbian." >&2; exit 1 ;;
+  esac
+
+  local arch
+  arch=$(dpkg --print-architecture 2>/dev/null || uname -m)
+  if [[ "$arch" != "arm64" && "$arch" != "aarch64" ]]; then
+    log "WARNING: arch is $arch; natto is expected to be arm64. Continuing anyway."
+  fi
+
+  log "preflight OK (${ID} ${VERSION_ID:-?} on $arch)"
+}
+
+# ---------------------------------------------------------------------------
+# Step 2: Docker
+# ---------------------------------------------------------------------------
+step_docker() {
+  if command -v docker >/dev/null && docker compose version >/dev/null 2>&1; then
+    skip "docker engine + compose plugin"
+    return
+  fi
+
+  log "installing Docker via get.docker.com"
+  curl -fsSL https://get.docker.com | sh
+  systemctl enable --now docker.service
+
+  # Add the operator's primary user (UID 1000) to the docker group if present.
+  local user1000
+  user1000=$(getent passwd 1000 | cut -d: -f1 || true)
+  if [[ -n "$user1000" ]] && ! id -nG "$user1000" | grep -qw docker; then
+    usermod -aG docker "$user1000"
+    log "added $user1000 to docker group (re-login required)"
+  fi
+}
+
+# ---------------------------------------------------------------------------
+# Step 3: Tailscale
+# ---------------------------------------------------------------------------
+step_tailscale() {
+  if command -v tailscale >/dev/null; then
+    skip "tailscale"
+    return
+  fi
+  log "installing Tailscale via tailscale.com/install.sh"
+  curl -fsSL https://tailscale.com/install.sh | sh
+  systemctl enable --now tailscaled.service
+}
+
+# ---------------------------------------------------------------------------
+# Step 4: Caddy (build, user, unit, Caddyfile)
+# ---------------------------------------------------------------------------
+step_caddy() {
+  # caddy user/group
+  if ! getent group caddy >/dev/null; then
+    groupadd --system caddy
+  fi
+  if ! id -u caddy >/dev/null 2>&1; then
+    useradd --system --gid caddy --home-dir /var/lib/caddy --create-home \
+      --shell /usr/sbin/nologin caddy
+  fi
+
+  # Build only if /usr/local/bin/caddy is missing or older than build.sh.
+  local need_build=0
+  if [[ ! -x /usr/local/bin/caddy ]]; then
+    need_build=1
+  elif [[ "$REPO_ROOT/services/caddy/build.sh" -nt /usr/local/bin/caddy ]]; then
+    need_build=1
+  fi
+
+  if (( need_build )); then
+    # Toolchain: Go + xcaddy
+    if ! command -v go >/dev/null; then
+      log "installing golang-go via apt"
+      DEBIAN_FRONTEND=noninteractive apt-get update
+      DEBIAN_FRONTEND=noninteractive apt-get install -y golang-go
+    fi
+    local go_major
+    go_major=$(go version | sed -nE 's/.*go([0-9]+)\.[0-9]+.*/\1/p')
+    if (( go_major < 1 )); then
+      echo "go version unparseable" >&2; exit 1
+    fi
+
+    if ! command -v xcaddy >/dev/null && [[ ! -x /root/go/bin/xcaddy ]]; then
+      log "installing xcaddy"
+      go install github.com/caddyserver/xcaddy/cmd/xcaddy@latest
+    fi
+    export PATH="$PATH:/root/go/bin"
+
+    log "building caddy via services/caddy/build.sh"
+    local tmp
+    tmp=$(mktemp -d)
+    pushd "$tmp" >/dev/null
+    bash "$REPO_ROOT/services/caddy/build.sh"
+    install -o root -g root -m 0755 ./caddy /usr/local/bin/caddy
+    popd >/dev/null
+    rm -rf "$tmp"
+    log "caddy installed: $(/usr/local/bin/caddy version)"
+  else
+    skip "caddy binary"
+  fi
+
+  # /etc/caddy + Caddyfile (Caddyfile only; caddy.env stays operator-provided)
+  install -d -o root -g root -m 0755 /etc/caddy
+  install -o root -g root -m 0644 \
+    "$REPO_ROOT/services/caddy/Caddyfile" \
+    /etc/caddy/Caddyfile
+
+  # systemd unit
+  install -o root -g root -m 0644 \
+    "$REPO_ROOT/services/caddy/caddy.service" \
+    /etc/systemd/system/caddy.service
+  systemctl daemon-reload
+
+  if [[ ! -f /etc/caddy/caddy.env ]]; then
+    log "WARNING: /etc/caddy/caddy.env missing — Caddy will not start until"
+    log "         you create it with CF_API_TOKEN=<token>, mode 0600, owner caddy:caddy."
+  fi
+}
+
+# ---------------------------------------------------------------------------
+# Step 5: /srv/<svc>/ + compose files
+# ---------------------------------------------------------------------------
+step_srv() {
+  # Pi-hole stays root-owned because the data inside is root-owned (the
+  # pihole/pihole image creates files as the in-container pihole UID, which
+  # surfaces as root on the host).
+  install -d -o root     -g root     -m 0755 /srv/pihole
+  install -d -o "$(getent passwd 1000 | cut -d: -f1)" \
+              -g "$(getent group  1000 | cut -d: -f1)" -m 0755 /srv/navidrome
+  install -d -o "$(getent passwd 1000 | cut -d: -f1)" \
+              -g "$(getent group  1000 | cut -d: -f1)" -m 0755 /srv/homepage
+
+  # Copy compose files (root-owned, world-readable so the docker group user
+  # can `docker compose ...` against them).
+  install -o root -g root -m 0644 \
+    "$REPO_ROOT/services/pihole/docker-compose.yml"   /srv/pihole/docker-compose.yml
+  install -o root -g root -m 0644 \
+    "$REPO_ROOT/services/navidrome/docker-compose.yml" /srv/navidrome/docker-compose.yml
+  install -o root -g root -m 0644 \
+    "$REPO_ROOT/services/homepage/docker-compose.yml"  /srv/homepage/docker-compose.yml
+}
+
+# ---------------------------------------------------------------------------
+# Step 6: next-steps banner
+# ---------------------------------------------------------------------------
+banner() {
+  cat <<EOF
+
+Bootstrap complete.
+
+Next steps (operator):
+  1. Authenticate Tailscale and bring it up:
+       tailscale up${TS_AUTHKEY:+ --authkey=\$TS_AUTHKEY}
+     ${TS_AUTHKEY:+(TS_AUTHKEY is in your environment.)}
+
+  2. Provide secrets:
+       a. /etc/caddy/caddy.env — Cloudflare API token for the DNS-01 challenge.
+            sudo install -o caddy -g caddy -m 0600 /dev/stdin /etc/caddy/caddy.env <<<'CF_API_TOKEN=<token>'
+       b. Pi-hole admin password — set on first run via Pi-hole's web UI, or
+          export WEBPASSWORD=... in the compose environment before bringing it up.
+
+  3. Restore service data from the latest /mnt/media/backups/natto-*.tgz tarball
+     into /srv/{pihole,navidrome,homepage}/. (See runbooks/migrate-natto.md.)
+
+  4. Validate Caddy and start it:
+       caddy validate --config /etc/caddy/Caddyfile
+       systemctl enable --now caddy.service
+       systemctl status caddy.service
+
+  5. Start docker services one at a time and verify each via its public URL:
+       cd /srv/pihole    && docker compose up -d   # then dig @127.0.0.1 example.com
+       cd /srv/navidrome && docker compose up -d   # then curl https://natto.nthncrtr.com/ping
+       cd /srv/homepage  && docker compose up -d   # then curl https://home.nthncrtr.com
+
+EOF
+}
+
+# ---------------------------------------------------------------------------
+main() {
+  preflight
+  step_docker
+  step_tailscale
+  step_caddy
+  step_srv
+  banner
+}
+
+main "$@"

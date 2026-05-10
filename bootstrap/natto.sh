@@ -119,12 +119,24 @@ step_caddy() {
       --shell /usr/sbin/nologin caddy
   fi
 
-  # Build only if /usr/local/bin/caddy is missing or older than build.sh.
-  local need_build=0
+  # Build only if /usr/local/bin/caddy is missing or its version differs from
+  # CADDY_VERSION declared in build.sh. (mtime checks would falsely trigger
+  # whenever the repo is freshly cloned, so we compare versions instead.)
+  local expected_version installed_version need_build=0
+  expected_version=$(sed -nE 's/^CADDY_VERSION="(v[^"]+)".*/\1/p' \
+    "$REPO_ROOT/services/caddy/build.sh")
+  if [[ -z "$expected_version" ]]; then
+    echo "could not parse CADDY_VERSION from services/caddy/build.sh" >&2
+    exit 1
+  fi
   if [[ ! -x /usr/local/bin/caddy ]]; then
     need_build=1
-  elif [[ "$REPO_ROOT/services/caddy/build.sh" -nt /usr/local/bin/caddy ]]; then
-    need_build=1
+  else
+    installed_version=$(/usr/local/bin/caddy version | awk '{print $1}')
+    if [[ "$installed_version" != "$expected_version" ]]; then
+      log "caddy installed=$installed_version expected=$expected_version — rebuilding"
+      need_build=1
+    fi
   fi
 
   if (( need_build )); then

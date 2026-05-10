@@ -162,7 +162,7 @@ Idempotent bootstrap that brings a fresh host to the point where `docker compose
 - The script is additive; partial runs are safe to re-run after fixing the failing step.
 - If a host is genuinely broken (e.g., wrong Docker repo configured): document the manual remediation in `runbooks/migrate-natto.md` § Gaps.
 
-### 2.2 VM dry-run of bootstrap
+### 2.2 VM dry-run of bootstrap  [PARTIAL — idempotency proved on natto; cold-start deferred]
 
 Prove the script runs end-to-end on a clean host without leaning on the live natto.
 
@@ -178,8 +178,14 @@ Prove the script runs end-to-end on a clean host without leaning on the live nat
 - Every manual fix-up the operator made during the dry-run is recorded in `runbooks/migrate-natto.md` § "Gaps found during dry-run" with the date.
 - VM is destroyed after the run (`multipass delete --purge <name>`).
 
+**Outcome:**
+- No VM tooling on workhorse and workhorse is Intel (arm64 VMs run under QEMU emulation — slow). Operator chose to defer the cold-start VM dry-run until a real replacement Pi is in hand and to instead prove **idempotency** by running `bootstrap/natto.sh` on natto itself, where every step should short-circuit.
+- Idempotency dry-run on natto: `sudo bash /tmp/nthncrtr-test/bootstrap/natto.sh` — exit 0, every step skipped/no-op'd as expected (docker + tailscale skipped, caddy binary version matched expected, /srv dirs and compose files re-installed with identical content, no services restarted).
+- One bug surfaced and fixed inline before the run: the original Caddy rebuild trigger compared `build.sh` mtime to the installed binary, which would falsely fire on any fresh repo clone (tar/git preserve mtimes). Replaced with a version comparison: parse `CADDY_VERSION` from `build.sh` and compare against `caddy version` output.
+- Cold-start success criteria (services start, tailscale auth-key flow, etc.) NOT yet exercised.
+
 **Rollback:**
-- Discard the VM. No production impact.
+- Discard the VM (when used). No production impact for the natto-based idempotency check.
 
 ### 2.3 runbooks/migrate-natto.md
 

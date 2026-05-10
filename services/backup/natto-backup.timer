@@ -1,0 +1,11 @@
+[Unit]
+Description=Daily run of natto-backup.service
+
+[Timer]
+OnCalendar=*-*-* 03:30:00
+RandomizedDelaySec=15min
+Persistent=true
+Unit=natto-backup.service
+
+[Install]
+WantedBy=timers.target

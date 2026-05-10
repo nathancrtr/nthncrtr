@@ -16,7 +16,9 @@
 #      that file holds the Cloudflare API token and must be installed manually.
 #   5. Create /srv/{pihole,navidrome,homepage}/ owned appropriately and copy
 #      services/<svc>/docker-compose.yml into each.
-#   6. Print next steps (provide secrets, restore data, start services).
+#   6. Install /usr/local/sbin/natto-backup + natto-backup.{service,timer},
+#      enable the daily timer.
+#   7. Print next steps (provide secrets, restore data, start services).
 #
 # What it does NOT do (intentionally):
 #   - Authenticate Tailscale (operator runs `tailscale up` with their auth key).
@@ -213,7 +215,32 @@ step_srv() {
 }
 
 # ---------------------------------------------------------------------------
-# Step 6: next-steps banner
+# Step 6: backup script + daily timer
+# ---------------------------------------------------------------------------
+step_backup() {
+  install -o root -g root -m 0755 \
+    "$REPO_ROOT/services/backup/backup.sh" \
+    /usr/local/sbin/natto-backup
+  install -o root -g root -m 0644 \
+    "$REPO_ROOT/services/backup/natto-backup.service" \
+    /etc/systemd/system/natto-backup.service
+  install -o root -g root -m 0644 \
+    "$REPO_ROOT/services/backup/natto-backup.timer" \
+    /etc/systemd/system/natto-backup.timer
+  systemctl daemon-reload
+  systemctl enable --now natto-backup.timer
+
+  # Create the backup target if the 5TB drive is mounted; warn otherwise.
+  if mountpoint -q /mnt/media; then
+    install -d -o root -g root -m 0755 /mnt/media/backups
+  else
+    log "WARNING: /mnt/media is not mounted — backups will fail until you mount"
+    log "         the 5TB drive there and create /mnt/media/backups."
+  fi
+}
+
+# ---------------------------------------------------------------------------
+# Step 7: next-steps banner
 # ---------------------------------------------------------------------------
 banner() {
   cat <<EOF
@@ -254,6 +281,7 @@ main() {
   step_tailscale
   step_caddy
   step_srv
+  step_backup
   banner
 }
 

@@ -204,20 +204,24 @@ A doc that lets future-you (or a second operator) bring up a replacement natto c
 **Rollback:**
 - N/A (documentation only).
 
-### 2.4 Backup script
+### 2.4 Backup script  [DONE — pending first real run on natto]
 
 A one-liner-ish script producing a dated tarball on the 5TB drive.
 
 **Preconditions:**
 - Phase 1 done; `/srv/` is the source of truth for service data.
-- `/mnt/media/backups/` exists and is writable (`ssh natto 'touch /mnt/media/backups/.test && rm /mnt/media/backups/.test'`).
+- `/mnt/media/backups/` exists and is writable. (Auto-created by `bootstrap/natto.sh` step_backup if `/mnt/media` is mounted.)
 
 **Success criteria:**
-- `bootstrap/backup.sh` committed (or `services/backup/backup.sh` — pick one and stay consistent).
-- Running it produces `/mnt/media/backups/natto-YYYY-MM-DD.tgz` containing: `/srv/`, `/usr/local/bin/caddy`, `/etc/caddy/Caddyfile`, `/etc/caddy/caddy.env` (acceptable since this tarball stays on the local-only 5TB drive), and `/etc/systemd/system/caddy.service`.
-- `tar -tzf /mnt/media/backups/natto-YYYY-MM-DD.tgz | head -20` shows expected paths.
-- Script exits non-zero if any source path is missing or the destination drive is full.
-- A systemd timer (`bootstrap/systemd/natto-backup.timer` + `.service`) committed for daily runs at a low-traffic hour, or an equivalent cron entry — choose one.
+- `services/backup/backup.sh` committed; `bash -n` clean. (Picked `services/backup/` as the location since it groups the script with its systemd unit + timer; `bootstrap/` stays reserved for one-shot host setup scripts.)
+- Running it produces `/mnt/media/backups/natto-YYYY-MM-DD.tgz` containing: `/srv/`, `/usr/local/bin/caddy`, `/etc/caddy/Caddyfile`, `/etc/caddy/caddy.env` (acceptable since this tarball stays on the local-only 5TB drive), and `/etc/systemd/system/caddy.service`. Atomic write via `.partial` rename so a partial archive never appears at the dated path.
+- `tar -tzf /mnt/media/backups/natto-YYYY-MM-DD.tgz | head -20` shows the expected absolute paths (script uses `tar -P` for round-trippable restore via `tar -xzf ... -C /`).
+- Script exits non-zero if run as non-root, any source path is missing, the destination dir is missing/unwritable, or there's not enough free space (require source-set-size + 10% headroom).
+- `services/backup/natto-backup.{service,timer}` committed: a oneshot service running `/usr/local/sbin/natto-backup` and a daily timer firing at 03:30 with a 15-min randomized delay (Persistent=true so a missed run catches up on next boot).
+- `bootstrap/natto.sh` extended with `step_backup` that installs the script to `/usr/local/sbin/natto-backup`, the unit + timer to `/etc/systemd/system/`, runs `daemon-reload`, enables and starts the timer, and creates `/mnt/media/backups` if `/mnt/media` is mounted.
+
+**Outcome:**
+- Files committed; `bash -n` clean. First real run on natto not yet exercised — operator can trigger via `sudo systemctl start natto-backup.service` once the bootstrap step has installed the units.
 
 **Rollback:**
 - N/A — backup is non-destructive. If a backup tarball is corrupt, delete it and re-run.

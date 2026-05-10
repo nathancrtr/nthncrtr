@@ -1,0 +1,13 @@
+[Unit]
+Description=natto state snapshot to /mnt/media/backups/
+After=local-fs.target
+RequiresMountsFor=/mnt/media
+
+[Service]
+Type=oneshot
+ExecStart=/usr/local/sbin/natto-backup
+Nice=10
+IOSchedulingClass=idle
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=natto-backup

@@ -1,0 +1,38 @@
+{
+	# Use DNS-01 challenge via Cloudflare for all sites
+	acme_dns cloudflare {env.CF_API_TOKEN}
+}
+
+# Dashboard
+home.nthncrtr.com {
+	reverse_proxy 127.0.0.1:3000
+}
+
+# Music
+natto.nthncrtr.com {
+	reverse_proxy natto.tailaf7ea6.ts.net:4533
+}
+
+# Pi-hole admin
+pi-hole.nthncrtr.com {
+	reverse_proxy 127.0.0.1:8053
+}
+
+# Torrent client
+torrent.nthncrtr.com {
+	reverse_proxy natto.tailaf7ea6.ts.net:8080
+}
+
+# Coffee roasting app
+#roast.nthncrtr.com {
+#reverse_proxy coffee-host.tailaf7ea6.ts.net:5000
+#}
+
+# Media server
+#jellyfin.nthncrtr.com {
+#reverse_proxy jellyfin-host.tailaf7ea6.ts.net:8096
+#}
+
+:443 {
+    abort
+}

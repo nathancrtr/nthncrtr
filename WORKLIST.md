@@ -112,21 +112,21 @@ Discovery showed no anonymous Docker volumes existed (all services already used 
 - Pi-hole moved to `/srv/pihole/{etc-pihole,etc-dnsmasq.d}` — inspect confirms new paths; container healthy; `dig @natto.local example.com` returns answers; admin UI returns 200. Repo `services/pihole/docker-compose.yml` updated from `./pihole/etc-*` to `./etc-*` to match the new co-located layout.
 - Old paths under `/home/nthncrtr/{navidrome,homepage,docker/pihole}/` left in place pending optional cleanup; the moved subdirs are gone but the parent dirs and the original `pihole-compose.yml` remain as a quiet record.
 
-### 1.8 coffee-host capture
+### 1.8 starmaya capture
 
 Commit the systemd unit, the udev rule for `/dev/behmor-arduino`, and a setup bootstrap script.
 
 **Preconditions:**
-- SSH access to coffee-host.
-- `ssh coffee-host 'systemctl is-active <roaster>.service'` returns `active`.
-- `ssh coffee-host 'ls -l /dev/behmor-arduino'` shows the symlink.
+- SSH access to starmaya.
+- `ssh starmaya 'systemctl is-active <roaster>.service'` returns `active`.
+- `ssh starmaya 'ls -l /dev/behmor-arduino'` shows the symlink.
 - Repo clean.
 
 **Success criteria:**
-- `services/coffee-host/<roaster>.service` committed (verbatim from `systemctl cat <roaster>.service`).
-- `services/coffee-host/99-behmor-arduino.rules` committed (verbatim from `/etc/udev/rules.d/99-behmor-arduino.rules` or wherever it lives — find with `grep -r behmor /etc/udev`).
-- `bootstrap/coffee-host.sh` committed; ShellCheck clean; idempotent (running it twice produces no errors and no second-run side effects beyond `apt update`).
-- A re-run of `bootstrap/coffee-host.sh` on the live coffee-host completes with exit 0 and the roaster service is still active afterward.
+- `services/starmaya/<roaster>.service` committed (verbatim from `systemctl cat <roaster>.service`).
+- `services/starmaya/99-behmor-arduino.rules` committed (verbatim from `/etc/udev/rules.d/99-behmor-arduino.rules` or wherever it lives — find with `grep -r behmor /etc/udev`).
+- `bootstrap/starmaya.sh` committed; ShellCheck clean; idempotent (running it twice produces no errors and no second-run side effects beyond `apt update`).
+- A re-run of `bootstrap/starmaya.sh` on the live starmaya completes with exit 0 and the roaster service is still active afterward.
 
 **Rollback:**
 - The bootstrap script should be additive and idempotent; rollback for a partial run is to re-run after fixing.
@@ -141,7 +141,7 @@ Commit the systemd unit, the udev rule for `/dev/behmor-arduino`, and a setup bo
 Idempotent bootstrap that brings a fresh host to the point where `docker compose up -d` per service is the only remaining step.
 
 **Preconditions:**
-- All Phase 1 missions committed (compose files, build script, /srv/ pinning, coffee-host capture).
+- All Phase 1 missions committed (compose files, build script, /srv/ pinning, starmaya capture).
 - Repo clean.
 
 **Success criteria:**
@@ -239,7 +239,7 @@ Reorganize the dashboard around hosts and add the "links I'll need someday" pane
 - Mission 3.1 done.
 
 **Success criteria:**
-- `services/homepage/config/services.yaml` uses top-level groups named after each host (`natto`, `coffee-host`, …).
+- `services/homepage/config/services.yaml` uses top-level groups named after each host (`natto`, `starmaya`, …).
 - `services/homepage/config/bookmarks.yaml` includes: Tailscale admin console, Cloudflare dashboard, the GitHub repo for this homelab, plus any operator-defined entries.
 - The full `services/homepage/config/` directory is committed (excluding the secrets file).
 - Dashboard renders with grouped layout; bookmarks panel populated.
@@ -257,8 +257,8 @@ The `roast.nthncrtr.com` block is commented out in the Caddyfile. Activate it on
 
 **Preconditions:**
 - Decision made: yes, expose the roasting app externally.
-- coffee-host is on Tailscale and reachable from natto: `ssh natto 'tailscale ping coffee-host'` succeeds.
-- The app responds locally: `ssh natto 'curl -fsSL -o /dev/null -w "%{http_code}\n" http://coffee-host.tailaf7ea6.ts.net:5000'` returns 200 (or whatever the app's healthy response is).
+- starmaya is on Tailscale and reachable from natto: `ssh natto 'tailscale ping starmaya'` succeeds.
+- The app responds locally: `ssh natto 'curl -fsSL -o /dev/null -w "%{http_code}\n" http://starmaya.tailaf7ea6.ts.net:5000'` returns 200 (or whatever the app's healthy response is).
 
 **Success criteria:**
 - `services/caddy/Caddyfile` block for `roast.nthncrtr.com` is uncommented (and re-formatted to match house style — proper indentation).

@@ -1,11 +1,11 @@
-You are an agent tasked with creating version-controlled config and operational runbooks for everything running across natto, coffee-host, and workhorse for the network at `nthncrtr.com`. 
+You are an agent tasked with creating version-controlled config and operational runbooks for everything running across natto, starmaya, and workhorse for the network at `nthncrtr.com`. 
 
 ## Current architecture
 
 | Device | Role | OS | Services |
 |---|---|---|---|
 | `natto` | Hub | Raspberry Pi (arm64) | Caddy (native), Pi-hole, Navidrome, torrent client, Homepage (all Docker) |
-| `coffee-host` | Workshop appliance | Raspberry Pi (arm64) | Roasting profiler (native, systemd) |
+| `starmaya` | Workshop appliance | Raspberry Pi (arm64) | Roasting profiler (native, systemd) |
 | `workhorse` | Client + dev | macOS Intel | Tailscale only — hosts no services |
 
 External access flows: `*.nthncrtr.com` → Cloudflare DNS → Tailscale IP of `natto` → Caddy → local service. Caddy uses the DNS-01 challenge via Cloudflare, so certificates issue without exposing port 80.

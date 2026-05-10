@@ -5,7 +5,7 @@ Each entry is a self-contained mission with three parts:
 - **Success criteria** — explicit, testable assertions.
 - **Rollback** — what to do if success criteria fail.
 
-Anything that stops Pi-hole or reloads Caddy must be announced and confirmed before execution (per CLAUDE.md). Treat `/mnt/music` as read-mostly: backups OK, destructive ops not.
+Anything that stops Pi-hole or reloads Caddy must be announced and confirmed before execution (per CLAUDE.md). Treat `/mnt/media` (the 5TB drive; music lives in `/mnt/media/music`) as read-mostly: backups OK, destructive ops not.
 
 ---
 
@@ -31,7 +31,7 @@ Capture `services/navidrome/docker-compose.yml` and ensure it reproduces the run
 - Repo `git status` clean.
 - `ssh natto 'docker inspect navidrome'` succeeds.
 - `curl -fsSL -o /dev/null -w '%{http_code}\n' https://natto.nthncrtr.com/ping` returns `200` (Navidrome's health endpoint).
-- Music library reachable: `ssh natto 'ls /mnt/music | head'` returns content.
+- Music library reachable: `ssh natto 'ls /mnt/media/music | head'` returns content.
 - Snapshot pre-cutover state: `ssh natto 'docker inspect navidrome > /tmp/navidrome.pre.json'`.
 
 **Success criteria:**
@@ -39,12 +39,12 @@ Capture `services/navidrome/docker-compose.yml` and ensure it reproduces the run
 - If a cutover is needed (i.e., the running container is *not* already managed by an equivalent compose file), after `docker compose up -d`: `docker ps --filter name=navidrome --format '{{.Status}}'` shows `Up … (healthy)` within 60s.
 - `curl -fsSL https://natto.nthncrtr.com/ping` returns 200 post-cutover.
 - Library track count (visible in Navidrome UI or via `/api/...`) is unchanged from pre-cutover snapshot.
-- Diff of `docker inspect` pre/post shows no drift in image, env, mounts (especially the `/mnt/music` bind), ports (4533), network mode.
+- Diff of `docker inspect` pre/post shows no drift in image, env, mounts (especially the `/mnt/media/music` bind), ports (4533), network mode.
 
 **Rollback:**
 - `docker compose -f /path/to/compose down && docker start navidrome_old` (rename the existing container to `navidrome_old` *before* `compose up`, so this works).
-- If `navidrome_old` is gone: `docker run -d --name navidrome --restart unless-stopped -p 4533:4533 -v /mnt/music:/music:ro -v /srv/navidrome/data:/data deluan/navidrome:latest` (adjust to whatever the prior image+mounts were per the pre-cutover snapshot).
-- If the Navidrome scan database is corrupted post-rollback: restore `/srv/navidrome/data` (or wherever the data dir lives) from `/mnt/music/backups/`.
+- If `navidrome_old` is gone: `docker run -d --name navidrome --restart unless-stopped -p 4533:4533 -v /mnt/media/music:/music:ro -v /srv/navidrome/data:/data deluan/navidrome:latest` (adjust to whatever the prior image+mounts were per the pre-cutover snapshot).
+- If the Navidrome scan database is corrupted post-rollback: restore `/srv/navidrome/data` (or wherever the data dir lives) from `/mnt/media/backups/`.
 
 ### 1.5 Torrent client compose + cutover
 
@@ -100,7 +100,7 @@ Convert any anonymous Docker volumes to bind mounts under `/srv/<service>/`. Pi-
 
 **Success criteria:**
 - For every service, `docker volume inspect` reveals no remaining anonymous volumes attached to its container.
-- Compose files reference absolute bind paths (`/srv/<service>/...` or `/mnt/music/...`), not named/anonymous volumes.
+- Compose files reference absolute bind paths (`/srv/<service>/...` or `/mnt/media/...`), not named/anonymous volumes.
 - `/srv/<service>/` exists and contains the migrated data: `find /srv/<service> -type f | wc -l` matches (within reason) the pre-move file count, and `du -sh` is comparable.
 - All services pass their URL checks after restart with the new mounts.
 - For Pi-hole, if its bind mounts are also moved to `/srv/pihole/`, this is announced and confirmed before execution per CLAUDE.md.
@@ -180,7 +180,7 @@ A doc that lets future-you (or a second operator) bring up a replacement natto c
 
 **Success criteria:**
 - `runbooks/migrate-natto.md` committed.
-- Sections include: prerequisites (hardware spec, OS image choice, network setup), step-by-step migration order (bootstrap → restore /srv/ from backup → start services in dependency order → verify), data restore commands referencing `/mnt/music/backups/natto-YYYY-MM-DD.tgz`, DNS/Tailscale cutover (when to flip the Cloudflare record from old natto's Tailnet IP to new), per-service smoke tests with curl commands, and a "Gaps found during dry-run" section.
+- Sections include: prerequisites (hardware spec, OS image choice, network setup), step-by-step migration order (bootstrap → restore /srv/ from backup → start services in dependency order → verify), data restore commands referencing `/mnt/media/backups/natto-YYYY-MM-DD.tgz`, DNS/Tailscale cutover (when to flip the Cloudflare record from old natto's Tailnet IP to new), per-service smoke tests with curl commands, and a "Gaps found during dry-run" section.
 - A reader who has never seen the repo can complete the migration using only this doc plus the repo's compose files and bootstrap script.
 
 **Rollback:**
@@ -192,12 +192,12 @@ A one-liner-ish script producing a dated tarball on the 5TB drive.
 
 **Preconditions:**
 - Phase 1 done; `/srv/` is the source of truth for service data.
-- `/mnt/music/backups/` exists and is writable (`ssh natto 'touch /mnt/music/backups/.test && rm /mnt/music/backups/.test'`).
+- `/mnt/media/backups/` exists and is writable (`ssh natto 'touch /mnt/media/backups/.test && rm /mnt/media/backups/.test'`).
 
 **Success criteria:**
 - `bootstrap/backup.sh` committed (or `services/backup/backup.sh` — pick one and stay consistent).
-- Running it produces `/mnt/music/backups/natto-YYYY-MM-DD.tgz` containing: `/srv/`, `/usr/local/bin/caddy`, `/etc/caddy/Caddyfile`, `/etc/caddy/caddy.env` (acceptable since this tarball stays on the local-only 5TB drive), and `/etc/systemd/system/caddy.service`.
-- `tar -tzf /mnt/music/backups/natto-YYYY-MM-DD.tgz | head -20` shows expected paths.
+- Running it produces `/mnt/media/backups/natto-YYYY-MM-DD.tgz` containing: `/srv/`, `/usr/local/bin/caddy`, `/etc/caddy/Caddyfile`, `/etc/caddy/caddy.env` (acceptable since this tarball stays on the local-only 5TB drive), and `/etc/systemd/system/caddy.service`.
+- `tar -tzf /mnt/media/backups/natto-YYYY-MM-DD.tgz | head -20` shows expected paths.
 - Script exits non-zero if any source path is missing or the destination drive is full.
 - A systemd timer (`bootstrap/systemd/natto-backup.timer` + `.service`) committed for daily runs at a low-traffic hour, or an equivalent cron entry — choose one.
 
@@ -289,15 +289,15 @@ The commented `jellyfin.nthncrtr.com` block in the Caddyfile is a smell. Either 
 
 ### 4.3 Media directory layout decision
 
-Right now Navidrome serves from `/mnt/music`. If Jellyfin is on the table, decide the directory structure now while the music tree is small enough to reorganize.
+Right now Navidrome serves from `/mnt/media/music`. If Jellyfin is on the table, decide the directory structure now while the media tree is small enough to reorganize. Note: `/mnt/media/music` currently contains a mix of music plus stray files (logs, bin/, config/) that should also be sorted out as part of this mission.
 
 **Preconditions:**
 - Phase 1 done (Navidrome compose pins its mount path explicitly).
-- Current `/mnt/music` size is small enough to move comfortably: `ssh natto 'du -sh /mnt/music'` returns a number you're willing to copy.
+- Current `/mnt/media` size is small enough to move comfortably: `ssh natto 'du -sh /mnt/media'` returns a number you're willing to copy.
 
 **Success criteria:**
-- `runbooks/media-layout.md` committed describing the chosen layout (e.g., `/mnt/music/{music,video,audiobooks,...}`) and the rationale (why this split, what's reserved for future media types).
-- Navidrome's bind mount in `services/navidrome/docker-compose.yml` reflects the chosen subdirectory (e.g., `/mnt/music/music:/music:ro`).
+- `runbooks/media-layout.md` committed describing the chosen layout (e.g., `/mnt/media/{music,video,audiobooks,...}`) and the rationale (why this split, what's reserved for future media types).
+- Navidrome's bind mount in `services/navidrome/docker-compose.yml` reflects the chosen subdirectory (e.g., `/mnt/media/music:/music:ro`).
 - A future `services/jellyfin/docker-compose.yml` would mount the corresponding video subdirectory; the runbook spells out exactly what mount line to use.
 - After any migration: music currently served by Navidrome is still accessible (no broken paths in Navidrome's library scan).
 

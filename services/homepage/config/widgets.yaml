@@ -1,0 +1,12 @@
+---
+# Top-bar widgets shown above the services grid.
+# https://gethomepage.dev/configs/info-widgets/
+
+- resources:
+    cpu: true
+    memory: true
+    disk: /
+
+- search:
+    provider: duckduckgo
+    target: _blank

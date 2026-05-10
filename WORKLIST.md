@@ -230,7 +230,7 @@ A one-liner-ish script producing a dated tarball on the 5TB drive.
 
 ## Phase 3 — Unified management with Homepage
 
-### 3.1 Homepage Docker socket integration + per-service widgets
+### 3.1 Homepage Docker socket integration + per-service widgets  [DONE]
 
 Mount the Docker socket read-only and add widget configs so the dashboard shows live status.
 
@@ -247,10 +247,17 @@ Mount the Docker socket read-only and add widget configs so the dashboard shows 
 - Secrets file is `.gitignore`d; a `.env.example` with placeholder keys is committed.
 - `https://home.nthncrtr.com` loads with all widgets populated within 5s.
 
+**Outcome:**
+- Docker socket already mounted (was set up before this mission, in the existing compose). Added `services/homepage/config/docker.yaml` defining `my-docker: { socket: /var/run/docker.sock }` so the `server: my-docker` references in services.yaml resolve.
+- Pi-hole and Navidrome widgets retain their existing API keys + Navidrome user/token/salt; values moved out of services.yaml into `/srv/homepage/secrets.env` (mode 0600, NOT in repo) and referenced from services.yaml as `{{HOMEPAGE_VAR_*}}`. `services/homepage/secrets.env.example` lists the variable set; `.gitignore` excludes the populated file.
+- compose env_file uses the optional spec (`required: false`) so `docker compose config` works on workhorse where secrets.env is absent.
+- Live verification on natto: `curl http://127.0.0.1:3000/api/services` returns the new structure with widget configs populated; container is healthy; public URL returns 200.
+- qBittorrent widget left commented out (container doesn't exist yet — mission 1.5 stub). Activates automatically once the container is up.
+
 **Rollback:**
 - Revert `services/homepage/config/services.yaml` and the compose file. `docker compose up -d` to recreate.
 
-### 3.2 Group by host + bookmarks.yaml + commit config dir
+### 3.2 Group by host + bookmarks.yaml + commit config dir  [DONE]
 
 Reorganize the dashboard around hosts and add the "links I'll need someday" panel.
 
@@ -262,6 +269,12 @@ Reorganize the dashboard around hosts and add the "links I'll need someday" pane
 - `services/homepage/config/bookmarks.yaml` includes: Tailscale admin console, Cloudflare dashboard, the GitHub repo for this homelab, plus any operator-defined entries.
 - The full `services/homepage/config/` directory is committed (excluding the secrets file).
 - Dashboard renders with grouped layout; bookmarks panel populated.
+
+**Outcome:**
+- services.yaml restructured with top-level groups `natto` (Pi-hole, Navidrome, qBittorrent stub) and `starmaya` (Coffee Roasting, link-only). bookmarks.yaml replaced placeholder GitHub/Reddit/YouTube with Tailscale admin, Cloudflare dashboard, and a GitHub link for this repo (currently `https://github.com/` — operator should fill in the real URL once the repo is published).
+- Fixed a real bug found during the refactor: the previous Navidrome `href` was `https://navidrome.nthncrtr.com`, which had no Caddyfile route. Now points at `natto.nthncrtr.com` (the actual route).
+- Full `services/homepage/config/` committed except `kubernetes.yaml`/`proxmox.yaml` (Homepage-generated stubs, not authoritative) and `custom.{css,js}` (empty on natto). If the operator populates those later, they should be added.
+- API check: `curl http://127.0.0.1:3000/api/bookmarks` returns the new groups.
 
 **Rollback:**
 - Revert the config files. `docker compose restart homepage`.

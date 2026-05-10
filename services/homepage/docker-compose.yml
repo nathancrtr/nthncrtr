@@ -11,4 +11,11 @@ services:
       - /var/run/docker.sock:/var/run/docker.sock:ro
     environment:
       - HOMEPAGE_ALLOWED_HOSTS=home.nthncrtr.com
+    env_file:
+      # secrets.env is NOT in the repo — see services/homepage/secrets.env.example
+      # for the variable list. On natto: /srv/homepage/secrets.env, mode 0600.
+      # Marked optional so `docker compose config` works on workhorse where the
+      # file is intentionally absent.
+      - path: secrets.env
+        required: false
     restart: unless-stopped

@@ -1,0 +1,62 @@
+---
+# Top-level groups follow host names so the dashboard reflects the
+# physical layout. Secrets are pulled from environment variables —
+# see services/homepage/secrets.env.example for the full list.
+
+- natto:
+    - Pi-hole:
+        href: https://pi-hole.nthncrtr.com
+        description: DNS sinkhole and ad blocker
+        icon: pi-hole.png
+        server: my-docker
+        container: pihole
+        widget:
+          type: pihole
+          url: http://host.docker.internal:8053
+          key: '{{HOMEPAGE_VAR_PIHOLE_KEY}}'
+          version: 6
+
+    - Navidrome:
+        href: https://natto.nthncrtr.com
+        description: Music streaming
+        icon: navidrome.png
+        server: my-docker
+        container: navidrome-navidrome-1
+        widget:
+          type: navidrome
+          url: http://natto.tailaf7ea6.ts.net:4533
+          user: nthncrtr
+          token: '{{HOMEPAGE_VAR_NAVIDROME_TOKEN}}'
+          salt: '{{HOMEPAGE_VAR_NAVIDROME_SALT}}'
+
+    - qBittorrent:
+        href: https://torrent.nthncrtr.com
+        description: Torrent client (stub — see services/qbittorrent/)
+        icon: qbittorrent.png
+        # Container does not exist yet; the docker block + widget activate
+        # automatically once it does. Uncomment when you bring it up.
+        # server: my-docker
+        # container: qbittorrent
+        # widget:
+        #   type: qbittorrent
+        #   url: http://host.docker.internal:8080
+        #   username: admin
+        #   password: '{{HOMEPAGE_VAR_QBITTORRENT_PASSWORD}}'
+
+- starmaya:
+    - Coffee Roasting:
+        href: https://roast.nthncrtr.com
+        description: Behmor roast tracker (Caddyfile route is stubbed — mission 4.1)
+        icon: mdi-coffee
+        # No native Homepage widget for this app; link only for now.
+
+# Future:
+# - media-pi:
+#     - Jellyfin:
+#         href: https://jellyfin.nthncrtr.com
+#         description: Movies and shows
+#         icon: jellyfin.png
+#         widget:
+#           type: jellyfin
+#           url: http://<media-pi>.tailaf7ea6.ts.net:8096
+#           key: '{{HOMEPAGE_VAR_JELLYFIN_KEY}}'

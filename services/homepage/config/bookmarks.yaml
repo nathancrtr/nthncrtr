@@ -1,0 +1,15 @@
+---
+# Things Homepage can't widget-ize but that I'll want one click away.
+
+- Infrastructure:
+    - Tailscale:
+        - abbr: TS
+          href: https://login.tailscale.com/admin/machines
+    - Cloudflare:
+        - abbr: CF
+          href: https://dash.cloudflare.com/
+
+- Code:
+    - nthncrtr (this repo):
+        - abbr: NC
+          href: https://github.com/

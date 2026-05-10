@@ -1,0 +1,9 @@
+---
+# Homepage's connection to the local Docker daemon. Lets services.yaml
+# reference `server: my-docker, container: <name>` and surface live
+# status, CPU, and memory inline next to each link.
+#
+# Requires the compose file to bind /var/run/docker.sock:/var/run/docker.sock:ro.
+
+my-docker:
+  socket: /var/run/docker.sock

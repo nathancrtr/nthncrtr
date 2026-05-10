@@ -31,6 +31,28 @@ dig @natto.local example.com
 cd /srv/pihole && sudo docker compose restart pihole
 ```
 
+## Local DNS records (split-horizon)
+
+| Hostname | LAN IP | Why |
+|---|---|---|
+| `natto.nthncrtr.com` | `192.168.1.50` | LAN-only devices (smart TV, Chromecast receivers, anything that can't run Tailscale) can't route to natto's Tailscale IP. With this override they reach Caddy on the LAN; SNI matches so the existing Let's Encrypt cert still verifies. |
+
+Stored in `pihole.toml` under `[dns].hosts`; visible in the web UI at **Settings → DNS → Local DNS Records**.
+
+## Editing config — use the UI or CLI, never the file
+
+`pihole.toml` (~70k, in `/srv/pihole/etc-pihole/`) is runtime-managed by pihole-FTL. **Do not edit it via `scp`/text editor.** A real incident: a host-side write raced FTL's own write and produced a zero-byte file, which FTL then read as "default config" — wiping upstream DNS, hosts, etc. Recovery required a container stop, file restore from a local backup, and container start.
+
+Safe ways to change config:
+- Web UI at `https://pi-hole.nthncrtr.com`
+- `docker exec pihole pihole-FTL --config <key> '[ ...value... ]'` — takes the file lock properly
+
+If FTL's writes silently produce a zero-byte `pihole.toml` and DNS quietly degrades, check disk space first: `ssh natto 'df -h /'`. The SD card has filled to 100% before, and FTL's serializer doesn't surface ENOSPC — it just truncates.
+
+If config is ever lost with no backup, at minimum re-enter:
+- `dns.upstreams = [ "8.8.8.8", "8.8.4.4" ]`
+- The Local DNS Records table above
+
 ## Admin password
 
 The web UI password is set inside the container, not via env var. If lost:

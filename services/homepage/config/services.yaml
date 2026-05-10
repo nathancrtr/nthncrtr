@@ -6,7 +6,6 @@
 - natto:
     - Pi-hole:
         href: https://pi-hole.nthncrtr.com
-        description: DNS sinkhole and ad blocker
         icon: pi-hole.png
         server: my-docker
         container: pihole
@@ -18,7 +17,6 @@
 
     - Navidrome:
         href: https://natto.nthncrtr.com
-        description: Music streaming
         icon: navidrome.png
         server: my-docker
         container: navidrome-navidrome-1
@@ -31,10 +29,9 @@
 
     - qBittorrent:
         href: https://torrent.nthncrtr.com
-        description: Torrent client (stub — see services/qbittorrent/)
         icon: qbittorrent.png
-        # Container does not exist yet; the docker block + widget activate
-        # automatically once it does. Uncomment when you bring it up.
+        # Stub — container does not exist yet; the docker block + widget
+        # activate automatically once it does. Uncomment when you bring it up.
         # server: my-docker
         # container: qbittorrent
         # widget:
@@ -46,8 +43,8 @@
 - starmaya:
     - Coffee Roasting:
         href: https://roast.nthncrtr.com
-        description: Behmor roast tracker (Caddyfile route is stubbed — mission 4.1)
         icon: mdi-coffee
+        # Caddyfile route is stubbed — mission 4.1.
         # No native Homepage widget for this app; link only for now.
 
 # Future:

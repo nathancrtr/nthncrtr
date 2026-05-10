@@ -1,0 +1,11 @@
+/* Auto-loaded by Homepage from config/custom.css.
+ * Override the default Manrope with Inter for a slightly more refined feel.
+ * The Google Fonts CDN is fetched on each page load — if that bothers you,
+ * self-host by dropping the .woff2 into config/ and adjusting the @font-face. */
+
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap');
+
+html,
+body {
+  font-family: 'Inter', system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+}

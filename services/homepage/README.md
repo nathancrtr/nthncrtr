@@ -20,9 +20,10 @@ The dashboard at `home.nthncrtr.com`. Shows live container status (via the Docke
 |---|---|
 | `services.yaml` | The grid: top-level groups by host (natto, starmaya), per-service entries with widgets |
 | `docker.yaml` | Defines `my-docker:` pointing at `/var/run/docker.sock` (mounted ro) |
-| `bookmarks.yaml` | Tailscale admin, Cloudflare, repo link |
-| `settings.yaml` | Provider stubs (weather APIs) |
+| `bookmarks.yaml` | Tailscale admin, Cloudflare, code repos |
+| `settings.yaml` | Title, color, header style, background image, per-group layout, weather provider stubs |
 | `widgets.yaml` | Top-bar widgets (CPU, memory, disk, search) |
+| `custom.css` | Auto-loaded by Homepage; currently swaps the default font for Inter |
 
 ## Secrets
 

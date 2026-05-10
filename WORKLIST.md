@@ -285,7 +285,7 @@ Reorganize the dashboard around hosts and add the "links I'll need someday" pane
 
 ### 4.1 Coffee app Caddyfile route  [PARTIAL — stub corrected, awaiting kvass on tailnet]
 
-The `roast.nthncrtr.com` block is commented out in the Caddyfile. Activate it once the roasting app is ready for external access.
+The `starmaya.nthncrtr.com` block is commented out in the Caddyfile. Activate it once the roasting app is ready for external access.
 
 **Preconditions:**
 - Decision made: yes, expose the roasting app externally.
@@ -293,13 +293,13 @@ The `roast.nthncrtr.com` block is commented out in the Caddyfile. Activate it on
 - The app responds locally: `ssh natto 'curl -fsSL -o /dev/null -w "%{http_code}\n" http://<host>.tailaf7ea6.ts.net:8080'` returns 200. Note: port is **8080** per `roaster-web.service`, not 5000 as the existing commented-out Caddyfile block claims — mission 4.1 must rewrite the port when uncommenting.
 
 **Success criteria:**
-- `services/caddy/Caddyfile` block for `roast.nthncrtr.com` is uncommented (and re-formatted to match house style — proper indentation).
+- `services/caddy/Caddyfile` block for `starmaya.nthncrtr.com` is uncommented (and re-formatted to match house style — proper indentation).
 - `caddy validate --config services/caddy/Caddyfile` passes locally.
 - After deploying to natto and `caddy reload`: no errors in `journalctl -u caddy -n 50`.
-- `curl -fsSL https://roast.nthncrtr.com/<known-path>` returns the expected response.
+- `curl -fsSL https://starmaya.nthncrtr.com/<known-path>` returns the expected response.
 
 **Outcome (partial):**
-- Updated the commented-out `roast.nthncrtr.com` block in `services/caddy/Caddyfile` to reflect known truth: port 5000 → 8080 (matches `roaster-web.service`), hostname is a `<kvass-on-tailnet>` placeholder, and a comment explains the blocker.
+- Updated the commented-out `starmaya.nthncrtr.com` block in `services/caddy/Caddyfile` to reflect known truth: port 5000 → 8080 (matches `roaster-web.service`), hostname is a `<kvass-on-tailnet>` placeholder, and a comment explains the blocker.
 - Activation pending: kvass needs to join natto's tailnet (currently natto sees only natto + kraut). Once it does, replace the placeholder with the real tailnet hostname, uncomment the block, push to natto, `caddy reload`.
 
 **Rollback:**

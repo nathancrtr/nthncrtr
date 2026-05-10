@@ -42,7 +42,7 @@
 
 - starmaya:
     - Coffee Roasting:
-        href: https://roast.nthncrtr.com
+        href: https://starmaya.nthncrtr.com
         icon: mdi-coffee
         # Caddyfile route is stubbed — mission 4.1.
         # No native Homepage widget for this app; link only for now.

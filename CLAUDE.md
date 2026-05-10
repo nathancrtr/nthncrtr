@@ -120,7 +120,7 @@ Caddy's secret (`CF_API_TOKEN`) lives at `/etc/caddy/caddy.env` (mode 0600, owne
 
 ### Reaching kvass
 
-kvass is **not on natto's tailnet** as of the last session. From workhorse you can `ssh kvass` (LAN), but from natto you cannot. Until kvass joins the tailnet, anything that requires natto-to-kvass network reach (e.g. activating the `roast.nthncrtr.com` Caddyfile route, mission 4.1) is blocked.
+kvass is **not on natto's tailnet** as of the last session. From workhorse you can `ssh kvass` (LAN), but from natto you cannot. Until kvass joins the tailnet, anything that requires natto-to-kvass network reach (e.g. activating the `starmaya.nthncrtr.com` Caddyfile route, mission 4.1) is blocked.
 
 ## Where to look for what
 

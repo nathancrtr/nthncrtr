@@ -87,7 +87,7 @@ Caddyfile routes `home.nthncrtr.com` → `:3000`.
 - `docker compose down && docker start homepage_old`.
 - Restore `/srv/homepage/config` from backup if config files were moved.
 
-### 1.7 Pin Docker data paths to /srv/<service>/  [PARTIAL — Navidrome + Homepage done; Pi-hole pending]
+### 1.7 Pin Docker data paths to /srv/<service>/  [DONE]
 
 Discovery showed no anonymous Docker volumes existed (all services already used host bind paths under `/home/nthncrtr/<svc>/`). Decision: relocate to `/srv/<svc>/` for convention, with both compose file and data co-located per service so relative `./<dir>` binds keep working. Notable: `/srv` is on the same filesystem as `/home/nthncrtr/` (the SD card root, currently 90% full) so the move is `mv` within one fs, not a physical relocation. SD-card pressure is a separate problem worth tracking elsewhere.
 
@@ -106,10 +106,11 @@ Discovery showed no anonymous Docker volumes existed (all services already used 
 - For each service: `cd /srv/<svc> && docker compose down && mv <dir> /home/nthncrtr/<svc>/<dir> && cd /home/nthncrtr/<svc> && docker compose up -d`.
 - For Pi-hole specifically: announce the rollback (DNS blip), then `mv` the etc-pihole and etc-dnsmasq.d back into `/home/nthncrtr/docker/pihole/`, restore the original `pihole-compose.yml` path semantics, `docker compose up -d` from `/home/nthncrtr/docker/`.
 
-**Status:**
-- Navidrome moved to `/srv/navidrome/` — `docker inspect` confirms `/srv/navidrome/data->/data` bind; `https://natto.nthncrtr.com/ping` → 200.
-- Homepage moved to `/srv/homepage/` — `docker inspect` confirms `/srv/homepage/config->/app/config` bind; `https://home.nthncrtr.com` → 200.
-- Pi-hole pending operator confirmation (DNS outage).
+**Outcome:**
+- Navidrome moved to `/srv/navidrome/` — inspect confirms `/srv/navidrome/data->/data`; `https://natto.nthncrtr.com/ping` → 200.
+- Homepage moved to `/srv/homepage/` — inspect confirms `/srv/homepage/config->/app/config`; `https://home.nthncrtr.com` → 200.
+- Pi-hole moved to `/srv/pihole/{etc-pihole,etc-dnsmasq.d}` — inspect confirms new paths; container healthy; `dig @natto.local example.com` returns answers; admin UI returns 200. Repo `services/pihole/docker-compose.yml` updated from `./pihole/etc-*` to `./etc-*` to match the new co-located layout.
+- Old paths under `/home/nthncrtr/{navidrome,homepage,docker/pihole}/` left in place pending optional cleanup; the moved subdirs are gone but the parent dirs and the original `pihole-compose.yml` remain as a quiet record.
 
 ### 1.8 coffee-host capture
 

@@ -10,6 +10,6 @@ services:
     environment:
       TZ: "America/New_York"
     volumes:
-      - "./pihole/etc-pihole:/etc/pihole"
-      - "./pihole/etc-dnsmasq.d:/etc/dnsmasq.d"
+      - "./etc-pihole:/etc/pihole"
+      - "./etc-dnsmasq.d:/etc/dnsmasq.d"
     restart: unless-stopped

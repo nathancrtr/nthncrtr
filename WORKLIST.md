@@ -328,7 +328,7 @@ The commented `jellyfin.nthncrtr.com` block in the Caddyfile is a smell. Either 
 **Rollback:**
 - Revert the Caddyfile change. If a Jellyfin container was started, `docker compose down && docker volume rm <vols>` if disposable; otherwise leave it stopped pending re-decision.
 
-### 4.3 Media directory layout decision
+### 4.3 Media directory layout decision  [DONE]
 
 Right now Navidrome serves from `/mnt/media/music`. If Jellyfin is on the table, decide the directory structure now while the media tree is small enough to reorganize. Note: `/mnt/media/music` currently contains a mix of music plus stray files (logs, bin/, config/) that should also be sorted out as part of this mission.
 
@@ -342,5 +342,11 @@ Right now Navidrome serves from `/mnt/media/music`. If Jellyfin is on the table,
 - A future `services/jellyfin/docker-compose.yml` would mount the corresponding video subdirectory; the runbook spells out exactly what mount line to use.
 - After any migration: music currently served by Navidrome is still accessible (no broken paths in Navidrome's library scan).
 
+**Outcome:**
+- `runbooks/media-layout.md` committed describing target layout `/mnt/media/{music,video,backups,_unsorted/}` with rationale, mount details, migration steps, and rollback.
+- Reorganization executed on natto: created `video/`, `backups/`, `_unsorted/{from-mnt-media-root,from-mnt-media-music}/`. Moved 9 root-level junk entries into `_unsorted/from-mnt-media-root/` (Autorun.inf, Seagate, Start_Here_*, Warranty.pdf, .VolumeIcon.{icns,ico}, ._). Collapsed the music nesting: previous /mnt/media/music/ contained ~62 mixed installer artifacts plus a /music subdir with the actual library; rotated to /mnt/media/music_old, lifted the real music up, swept the rest into `_unsorted/from-mnt-media-music/`. `System Volume Information` left in place (Windows artifact; recreates if touched).
+- 778 album dirs in /mnt/media/music after the move, matching pre-move count.
+- Navidrome compose mount unchanged (/mnt/media/music:/music:ro stays the same path). Navidrome restarted; rescan in progress (live verified via container logs — albums importing at ~1-10s each, expected total 30 min – 2 h for 257 GB).
+
 **Rollback:**
-- Move data back to the prior layout. Revert compose file. Restart Navidrome. The directory move is reversible as long as the operation is a copy-then-verify-then-delete, not a rename in flight.
+- See `runbooks/media-layout.md` § Rollback for the reverse-direction script. All moves stayed within the exfat fs so they're truly reversible without re-copying.

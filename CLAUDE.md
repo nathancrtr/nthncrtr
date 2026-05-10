@@ -1,17 +1,146 @@
-You are an agent tasked with creating version-controlled config and operational runbooks for everything running across natto, starmaya, and workhorse for the network at `nthncrtr.com`. 
+# Project context for Claude
 
-## Current architecture
+You are working in the version-controlled config + operational runbook for a small home network at `nthncrtr.com`. Read this whole file before acting; it's short, but every section reflects a real lesson learned.
 
-| Device | Role | OS | Services |
-|---|---|---|---|
-| `natto` | Hub | Raspberry Pi (arm64) | Caddy (native), Pi-hole, Navidrome, torrent client, Homepage (all Docker) |
-| `starmaya` | Workshop appliance | Raspberry Pi (arm64) | Roasting profiler (native, systemd) |
-| `workhorse` | Client + dev | macOS Intel | Tailscale only — hosts no services |
+## Architecture
 
-External access flows: `*.nthncrtr.com` → Cloudflare DNS → Tailscale IP of `natto` → Caddy → local service. Caddy uses the DNS-01 challenge via Cloudflare, so certificates issue without exposing port 80.
+| Host | Hostname | Role | OS / Arch | Services |
+|---|---|---|---|---|
+| **natto** | `natto` | Hub | Raspberry Pi, arm64, Debian 13 | Caddy (native, systemd), Pi-hole, Navidrome, Homepage, qBittorrent (stub) — all docker-managed compose projects |
+| **starmaya** | `kvass` (machine), `starmaya` (canonical) | Workshop appliance | Raspberry Pi, arm64, Debian 13 | `roaster-daemon` + `roaster-web` (Node.js, native systemd). NOT currently on the tailnet. |
+| **workhorse** | `workhorse` | Client + dev | Intel Mac | Tailscale only — hosts no services. This is where you typically run from. |
 
-* Pi-hole is critical infrastructure for the household. Any change that stops it should be announced before execution and gated on user confirmation. "Stopping Pi-hole now — this will kill DNS for ~30 seconds, confirm? (y/n)" If your tooling supports it, mark Pi-hole operations as requiring explicit approval.
-* Caddy is the gate to all external access. Never systemctl restart caddy without first running caddy validate on the new Caddyfile. If validation fails, don't touch the running config.
-* The 5TB drive (mounted at `/mnt/media`, with music in `/mnt/media/music`) must be treated as read-mostly. The agent should never run partition, filesystem, or rm -rf commands against /mnt/media or /dev/sd*. Backup operations are fine; destructive ops are not.
-* Always commit before and after. Every session should start with git status clean and end with a commit. If the session is interrupted, the repo state tells you exactly what happened.
-* Dry-run on a VM where possible. Phase 2's "dry-run the bootstrap on a VM or spare Pi" is the right pattern for any change to bootstrap scripts. The agent can spin up a multipass or UTM VM on workhorse, run the bootstrap there, and report back — far safer than running it on real natto.
+External access flow: `*.nthncrtr.com` → Cloudflare DNS (DNS-01 challenge token in `caddy.env`) → Tailscale IP of natto → Caddy on natto → local service.
+
+## Repo layout
+
+```
+.
+├── CLAUDE.md                    # this file
+├── README.md                    # human-facing intro
+├── WORKLIST.md                  # mission tracker (current + planned + done with [DONE]/[PARTIAL])
+├── bootstrap/                   # one-shot host setup scripts (idempotent, run as root)
+│   ├── natto.sh
+│   └── starmaya.sh
+├── runbooks/                    # operational docs for non-routine procedures
+│   ├── migrate-natto.md         # cold migration to a replacement Pi
+│   └── media-layout.md          # /mnt/media organization
+└── services/                    # per-service config, one dir each
+    ├── caddy/                   # Caddyfile + caddy.service + build.sh
+    ├── pihole/                  # docker-compose.yml
+    ├── navidrome/               # docker-compose.yml
+    ├── homepage/                # docker-compose.yml + config/ + secrets.env.example + .gitignore
+    ├── qbittorrent/             # stub compose (not yet deployed)
+    ├── starmaya/                # systemd units + udev rule (deploys to kvass)
+    └── backup/                  # backup.sh + natto-backup.{service,timer}
+```
+
+On natto, deployed config lives at `/srv/<svc>/` with the compose file co-located beside its data (so relative `./data` paths in compose files work). The bootstrap script is what syncs `services/<svc>/docker-compose.yml` into place there.
+
+## Naming conventions you must know
+
+- **starmaya vs kvass**: the docs and repo paths always use `starmaya`. The actual machine you SSH to right now is named `kvass`. Treat `starmaya` as the canonical service name and intended future hostname. ([memory](../../.claude/projects/-Users-nathancarter-repos-nthncrtr/memory/project_starmaya_kvass.md))
+- Container names on natto: `pihole`, `navidrome-navidrome-1` (compose v2 default with project=navidrome), `homepage`, eventually `qbittorrent`.
+- Service data on natto lives under `/srv/<svc>/`. `/home/nthncrtr/{navidrome,homepage,docker}/` are the **previous** locations and are now empty parents — the move to `/srv/` happened in mission 1.7.
+- The 5TB drive is at `/mnt/media` (exfat, uid=1000:gid=1000). Music in `/mnt/media/music`, backups in `/mnt/media/backups`, future video in `/mnt/media/video`, junk in `/mnt/media/_unsorted/`. Do NOT call it "/mnt/music" — that path doesn't exist.
+
+## Safety rules
+
+These exist because skipping them once would be expensive. Each has a reason:
+
+1. **Pi-hole stop = household DNS outage.** Always announce + get an explicit y/n confirm (use `AskUserQuestion`) before any operation that stops or restarts the `pihole` container. ~30s of dropped DNS for everyone in the house. Other services don't need this gate.
+2. **Caddy reload only after `caddy validate` (or `caddy adapt`) passes.** If validation fails, leave the running config alone. A broken Caddyfile takes down every external URL.
+3. **/mnt/media is read-mostly.** No `partition`, `mkfs`, `rm -rf`, or anything destructive against `/mnt/media` or `/dev/sd*`. Backup operations are fine. Reorganization within the fs (mv) is fine.
+4. **`docker compose down && up` is fine for non-Pi-hole services**, but verify the public URL after — see § Workflow patterns.
+5. **Never `--no-verify` git commits.** Never amend published commits. Never force-push.
+6. **Never add `Co-Authored-By: Claude` trailers to commit messages.** Operator preference, applies forever. ([memory](../../.claude/projects/-Users-nathancarter-repos-nthncrtr/memory/feedback_commit_attribution.md))
+7. **Always commit before and after a session.** A clean `git status` at session end means a future session can pick up cleanly.
+
+## Workflow patterns (the things that took a while to figure out)
+
+### Sudo on natto from workhorse
+
+`ssh natto sudo …` will fail because sudo wants a TTY. The pattern that works:
+
+1. Compose the full command (`set -e` + the sudo'd ops chained with `&&`).
+2. Copy it to clipboard via `printf … | pbcopy`.
+3. Tell the operator to paste it in their terminal — sudo prompts there work.
+4. After they say "done", verify the resulting state by SSHing in non-sudo for read-only checks.
+
+For non-sudo work, `nthncrtr` is in the `docker` group, so `docker compose …` over plain SSH is fine.
+
+### Validating the Caddyfile
+
+`caddy validate` actually tries to *provision* TLS, which fails without `CF_API_TOKEN` set. For syntax-only checks, use:
+
+```sh
+cat services/caddy/Caddyfile | ssh natto 'caddy adapt --adapter caddyfile --config /dev/stdin'
+```
+
+A successful adapt returns the JSON config. A failed one prints an error to stderr.
+
+### Capturing existing config
+
+When asked to "capture" what's running on natto for a service, check whether it's already managed by docker compose first:
+
+```sh
+ssh natto 'docker inspect <container> --format "{{index .Config.Labels \"com.docker.compose.project.config_files\"}}"'
+```
+
+If a path comes back, that file IS the source of truth — fetch it verbatim. The cutover from "running container" to "container managed by your shiny new compose file" is then a **no-op**, because the running container is already that compose file. Don't restart things to "test the cutover" — verify config equivalence and move on.
+
+### Service "cutover" pattern (when something IS needed)
+
+For Navidrome / Homepage / qBittorrent (anything not Pi-hole):
+1. Snapshot pre-state: `docker inspect <container> > /tmp/<svc>.pre.json`.
+2. `cd /srv/<svc> && docker compose down`.
+3. Make the change (path move, compose edit, etc.).
+4. `docker compose up -d` from the new location.
+5. Verify: `curl -fsSL -o /dev/null -w '%{http_code}\n' https://<url>`.
+6. Diff `docker inspect` if you want full assurance.
+
+For Pi-hole, add the AskUserQuestion gate before step 2.
+
+### Secrets
+
+Pattern in this repo:
+
+- Repo: commit `services/<svc>/secrets.env.example` with variable names + empty values, and `services/<svc>/.gitignore` excluding `secrets.env`.
+- On natto: `/srv/<svc>/secrets.env` mode 0600, populated with real values.
+- Compose: `env_file: [{ path: secrets.env, required: false }]` so `docker compose config` works on workhorse where the file is intentionally absent.
+- For Homepage: services.yaml references secrets as `{{HOMEPAGE_VAR_*}}` substitutions; the env file populates those vars.
+
+Caddy's secret (`CF_API_TOKEN`) lives at `/etc/caddy/caddy.env` (mode 0600, owner `caddy:caddy`), which the systemd unit `EnvironmentFile=`s. Operator installs it manually after bootstrap; it's deliberately NOT in the repo and NOT auto-restored.
+
+### Bash scripts
+
+- Idempotent. Re-running a script with no state change should be a no-op.
+- `set -euo pipefail` at the top of every script.
+- For "is the binary installed at the right version" checks, prefer parsing the binary's `--version` over comparing `mtime` (mtimes don't survive `git clone` or `tar`-based copies).
+
+### Reaching kvass
+
+kvass is **not on natto's tailnet** as of the last session. From workhorse you can `ssh kvass` (LAN), but from natto you cannot. Until kvass joins the tailnet, anything that requires natto-to-kvass network reach (e.g. activating the `roast.nthncrtr.com` Caddyfile route, mission 4.1) is blocked.
+
+## Where to look for what
+
+- **What was decided** — `WORKLIST.md`. Each mission has Preconditions / Success criteria / Rollback / Outcome. `[DONE]` and `[PARTIAL]` markers are kept up to date.
+- **How to migrate natto** — `runbooks/migrate-natto.md`. Cold-start steps, in order, including the Cloudflare DNS cutover.
+- **/mnt/media layout** — `runbooks/media-layout.md`. What's where and why; rollback for the reorganization.
+- **Per-service operational notes** — `services/<svc>/README.md`. Ports, secrets, container names, where data lives.
+- **Project memory** — `~/.claude/projects/-Users-nathancarter-repos-nthncrtr/memory/`. The kvass/starmaya distinction and the "no Co-Authored-By" rule live here. Update when you learn something durable.
+
+## Things NOT to do
+
+- Don't try `sudo` over SSH non-interactively to natto. Use the clipboard pattern.
+- Don't try to reach kvass from natto. It's not on the tailnet yet.
+- Don't `caddy validate` for syntax checks — use `caddy adapt`.
+- Don't commit `secrets.env` (it's gitignored, but always double-check `git status` before committing in `services/homepage/`).
+- Don't restart Pi-hole without operator confirmation.
+- Don't reload Caddy without first validating the new config.
+- Don't add `Co-Authored-By: Claude` to commits.
+- Don't blindly trust this file — if you find drift between what's documented here and reality, fix this file as part of your work and call it out in the commit message.
+
+## When in doubt
+
+Default to capture-then-confirm: read state, propose the change, ask the operator before doing anything that reaches outside the repo. This codebase is small enough that over-asking costs less than under-asking.

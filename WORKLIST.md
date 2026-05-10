@@ -187,7 +187,7 @@ Prove the script runs end-to-end on a clean host without leaning on the live nat
 **Rollback:**
 - Discard the VM (when used). No production impact for the natto-based idempotency check.
 
-### 2.3 runbooks/migrate-natto.md
+### 2.3 runbooks/migrate-natto.md  [DONE — 8958d0f]
 
 A doc that lets future-you (or a second operator) bring up a replacement natto cold.
 
@@ -198,6 +198,8 @@ A doc that lets future-you (or a second operator) bring up a replacement natto c
 - `runbooks/migrate-natto.md` committed.
 - Sections include: prerequisites (hardware spec, OS image choice, network setup), step-by-step migration order (bootstrap → restore /srv/ from backup → start services in dependency order → verify), data restore commands referencing `/mnt/media/backups/natto-YYYY-MM-DD.tgz`, DNS/Tailscale cutover (when to flip the Cloudflare record from old natto's Tailnet IP to new), per-service smoke tests with curl commands, and a "Gaps found during dry-run" section.
 - A reader who has never seen the repo can complete the migration using only this doc plus the repo's compose files and bootstrap script.
+
+**Outcome:** Nine numbered steps in order: clone repo, run bootstrap, tailscale up, install caddy.env, restore data, start Caddy, cut DNS at Cloudflare, bring up docker services with smoke tests, decommission old host. Plus prerequisites, rollback section, and a Gaps section seeded with the one mtime bug from 2.2.
 
 **Rollback:**
 - N/A (documentation only).

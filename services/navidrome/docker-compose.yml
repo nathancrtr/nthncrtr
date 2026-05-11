@@ -10,6 +10,7 @@ services:
       ND_LOGLEVEL: "info"
       ND_SESSIONTIMEOUT: "24h"
       ND_BASEURL: ""
+      ND_AUTOIMPORTPLAYLISTS: false
     volumes:
       - "./data:/data"
       - "/mnt/media/music:/music:ro"

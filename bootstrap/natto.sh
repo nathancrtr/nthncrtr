@@ -109,6 +109,60 @@ step_tailscale() {
 }
 
 # ---------------------------------------------------------------------------
+# Step 3.5: Deploy key + ssh config for /srv/nthncrtr-repo (CD pipeline)
+# ---------------------------------------------------------------------------
+# Generates a passphrase-less ed25519 keypair for the UID-1000 user to use as
+# a GitHub Deploy key on this repo, and writes an ~/.ssh/config entry so SSH
+# offers it to github.com. Cloning the repo to /srv/nthncrtr-repo remains a
+# manual step (the operator has to add the pubkey to GitHub first).
+#
+# Passphrase-less is deliberate: server-resident keys used non-interactively
+# can't prompt for a passphrase, and the threat model is "if the host is
+# compromised, the read-only single-repo deploy key is the least concern."
+step_deploy_key() {
+  local user1000 home_dir
+  user1000=$(getent passwd 1000 | cut -d: -f1)
+  if [[ -z "$user1000" ]]; then
+    log "WARNING: no UID 1000 user; skipping deploy-key setup"
+    return
+  fi
+  home_dir=$(getent passwd 1000 | cut -d: -f6)
+
+  local key_path="$home_dir/.ssh/id_ed25519_deploy"
+  local config_path="$home_dir/.ssh/config"
+
+  install -d -o "$user1000" -g "$user1000" -m 0700 "$home_dir/.ssh"
+
+  if [[ -f "$key_path" ]]; then
+    skip "deploy keypair at $key_path"
+  else
+    log "generating passphrase-less deploy keypair at $key_path"
+    sudo -u "$user1000" ssh-keygen -t ed25519 -N "" -C "deploy@$(hostname -s)" -f "$key_path" >/dev/null
+  fi
+
+  if [[ -f "$config_path" ]] && grep -q '^Host github.com$' "$config_path"; then
+    skip "ssh config Host github.com block"
+  else
+    log "adding Host github.com block to $config_path"
+    sudo -u "$user1000" tee -a "$config_path" >/dev/null <<EOF
+
+Host github.com
+    HostName github.com
+    User git
+    IdentityFile $key_path
+    IdentitiesOnly yes
+EOF
+    chmod 600 "$config_path"
+    chown "$user1000:$user1000" "$config_path"
+  fi
+
+  if [[ ! -d /srv/nthncrtr-repo/.git ]]; then
+    log "deploy-key pubkey (add to GitHub repo → Settings → Deploy keys before cloning):"
+    sed 's/^/      /' "${key_path}.pub"
+  fi
+}
+
+# ---------------------------------------------------------------------------
 # Step 4: Caddy (build, user, unit, Caddyfile)
 # ---------------------------------------------------------------------------
 step_caddy() {
@@ -271,6 +325,15 @@ Next steps (operator):
        cd /srv/navidrome && docker compose up -d   # then curl https://natto.nthncrtr.com/ping
        cd /srv/homepage  && docker compose up -d   # then curl https://home.nthncrtr.com
 
+  6. Set up the CD pipeline (one-time, if /srv/nthncrtr-repo isn't already in place):
+       a. Add the deploy-key pubkey (printed by step_deploy_key above) to the
+          repo's Settings → Deploy keys (read access only is sufficient).
+       b. As the UID-1000 user, clone the repo to /srv/nthncrtr-repo:
+            git clone git@github.com:nathancrtr/nthncrtr.git /tmp/nthncrtr-repo
+            sudo mv /tmp/nthncrtr-repo /srv/nthncrtr-repo
+       c. Going forward, deploy with:
+            cd /srv/nthncrtr-repo && git pull && sudo ./deploy.sh [--dry-run] [services...]
+
 EOF
 }
 
@@ -279,6 +342,7 @@ main() {
   preflight
   step_docker
   step_tailscale
+  step_deploy_key
   step_caddy
   step_srv
   step_backup

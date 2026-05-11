@@ -58,9 +58,28 @@ These exist because skipping them once would be expensive. Each has a reason:
 
 ## Workflow patterns (the things that took a while to figure out)
 
+### Deploying repo changes to natto
+
+For routine config updates use `deploy.sh` at the repo root, not ad-hoc scp/rsync. The repo is checked out at `/srv/nthncrtr-repo` on natto; deploy from there:
+
+```sh
+ssh -t natto
+cd /srv/nthncrtr-repo
+git pull
+sudo ./deploy.sh                          # default: caddy + navidrome + homepage + backup
+sudo ./deploy.sh --dry-run                # preview diffs and intended actions
+sudo ./deploy.sh navidrome homepage       # specific services
+sudo ./deploy.sh --yes-pihole pihole      # required for pihole (DNS outage gate)
+sudo ./deploy.sh starmaya                 # opt-in; deploys to kvass via ssh -t
+```
+
+The script honors the safety rules: Caddy gets `caddy adapt` validation before any file touches `/etc/caddy/`; Pi-hole requires `--yes-pihole`; starmaya is opt-in. It also warns (does not fail) if the working tree is dirty. Per-service logic and reload conditions live inside `deploy.sh` itself.
+
+Repo lives at `/srv/nthncrtr-repo`, cloned via a per-host GitHub Deploy key (passphrase-less ed25519). GitHub disallows the same key being both a personal SSH key and a deploy key, so the host gets its own. `bootstrap/natto.sh` (`step_deploy_key`) generates the key and writes the `Host github.com` SSH config entry; the operator still has to add the pubkey to GitHub once and clone the repo once. Passphrase-less is deliberate — non-interactive automation can't prompt, and a server-resident read-only single-repo key is the least valuable thing on a compromised host.
+
 ### Sudo on natto from workhorse
 
-`ssh natto sudo …` will fail because sudo wants a TTY. The pattern that works:
+For one-off changes outside `deploy.sh`'s scope: `ssh natto sudo …` will fail because sudo wants a TTY. The pattern that works:
 
 1. Compose the full command (`set -e` + the sudo'd ops chained with `&&`).
 2. Copy it to clipboard via `printf … | pbcopy`.

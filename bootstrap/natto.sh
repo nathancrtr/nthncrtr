@@ -257,6 +257,10 @@ step_srv() {
               -g "$(getent group  1000 | cut -d: -f1)" -m 0755 /srv/navidrome
   install -d -o "$(getent passwd 1000 | cut -d: -f1)" \
               -g "$(getent group  1000 | cut -d: -f1)" -m 0755 /srv/homepage
+  install -d -o "$(getent passwd 1000 | cut -d: -f1)" \
+              -g "$(getent group  1000 | cut -d: -f1)" -m 0755 /srv/radarr
+  install -d -o "$(getent passwd 1000 | cut -d: -f1)" \
+              -g "$(getent group  1000 | cut -d: -f1)" -m 0755 /srv/sonarr
 
   # Copy compose files (root-owned, world-readable so the docker group user
   # can `docker compose ...` against them).
@@ -266,6 +270,10 @@ step_srv() {
     "$REPO_ROOT/services/navidrome/docker-compose.yml" /srv/navidrome/docker-compose.yml
   install -o root -g root -m 0644 \
     "$REPO_ROOT/services/homepage/docker-compose.yml"  /srv/homepage/docker-compose.yml
+  install -o root -g root -m 0644 \
+    "$REPO_ROOT/services/radarr/docker-compose.yml"    /srv/radarr/docker-compose.yml
+  install -o root -g root -m 0644 \
+    "$REPO_ROOT/services/sonarr/docker-compose.yml"    /srv/sonarr/docker-compose.yml
 }
 
 # ---------------------------------------------------------------------------

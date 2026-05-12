@@ -1,0 +1,39 @@
+# Radarr — managed by deploy.sh (sudo ./deploy.sh radarr).
+#
+# Before first run on natto (deploy.sh handles dirs idempotently, but for
+# manual bring-up):
+#   mkdir -p /srv/radarr/config
+#   mkdir -p /mnt/media/video/movies
+#   docker compose -f /srv/radarr/docker-compose.yml up -d
+#   # Then in the WebUI (https://radarr.nthncrtr.com):
+#   #   Settings → Media Management → Add Root Folder: /mnt/media/video/movies
+#   #   Settings → Download Clients → Add qBittorrent (category: movies)
+#   #   Settings → General → Security → copy the API key to secrets.env
+#
+# IMPORTANT — keep downloads on /mnt/media, not the SD card:
+#   In qBittorrent, set the default save path to /mnt/media/downloads/complete/
+#   (or a category-scoped path under that). Radarr can then see the completed
+#   files at /mnt/media/downloads/complete/ inside the container and move them
+#   to /mnt/media/video/movies/ — all on the same (exfat) filesystem.
+#
+# Pi 4 B note: Radarr's .NET runtime idles at ~150–250 MB but spikes during
+# initial library scans. mem_limit: 512m caps runaway growth so that one
+# greedy process cannot OOM-kill the other services on this 2 GB host.
+#
+# Ports:
+#   7878 — WebUI (matches Caddyfile)
+services:
+  radarr:
+    image: lscr.io/linuxserver/radarr:latest
+    container_name: radarr
+    environment:
+      - PUID=1000
+      - PGID=1000
+      - TZ=America/New_York
+    volumes:
+      - ./config:/config
+      - /mnt/media:/mnt/media
+    ports:
+      - "7878:7878"
+    restart: unless-stopped
+    mem_limit: 512m

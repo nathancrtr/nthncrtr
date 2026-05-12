@@ -11,8 +11,8 @@
 # One-time bootstrap (not handled here): git clone this repo to
 # /srv/nthncrtr-repo and put a read-only deploy key at /root/.ssh/.
 #
-# Services: caddy navidrome homepage backup qbittorrent pihole starmaya
-# Default (no service args): caddy navidrome homepage backup qbittorrent
+# Services: caddy navidrome homepage backup qbittorrent radarr sonarr pihole starmaya
+# Default (no service args): caddy navidrome homepage backup qbittorrent radarr sonarr
 #   — pihole is gated behind --yes-pihole (DNS outage for ~30s).
 #   — starmaya must be requested explicitly (deploys to kvass over ssh).
 #
@@ -31,8 +31,8 @@ usage() {
   cat <<'EOF'
 Usage: sudo ./deploy.sh [--dry-run] [--yes-pihole] [services...]
 
-Services: caddy navidrome homepage backup qbittorrent pihole starmaya
-Default (no service args): caddy navidrome homepage backup qbittorrent
+Services: caddy navidrome homepage backup qbittorrent radarr sonarr pihole starmaya
+Default (no service args): caddy navidrome homepage backup qbittorrent radarr sonarr
 EOF
   exit "${1:-0}"
 }
@@ -50,7 +50,7 @@ done
 
 SERVICES=("$@")
 if [[ ${#SERVICES[@]} -eq 0 ]]; then
-  SERVICES=(caddy navidrome homepage backup qbittorrent)
+  SERVICES=(caddy navidrome homepage backup qbittorrent radarr sonarr)
   (( YES_PIHOLE )) && SERVICES+=(pihole)
 fi
 
@@ -187,6 +187,36 @@ deploy_qbittorrent() {
   compose_up qbittorrent
   sleep 3
   verify_url https://torrent.nthncrtr.com 200 || true
+}
+
+deploy_radarr() {
+  log "radarr"
+  local CHANGED=0
+  install_file "$REPO_ROOT/services/radarr/docker-compose.yml" /srv/radarr/docker-compose.yml
+  (( DRY_RUN )) && return 0
+  # Ensure config dir exists (idempotent; first-time setup may have already done this).
+  if [[ ! -d /srv/radarr/config ]]; then
+    install -d -o nthncrtr -g nthncrtr -m 0755 /srv/radarr/config
+    note "created /srv/radarr/config"
+  fi
+  compose_up radarr
+  sleep 3
+  verify_url https://radarr.nthncrtr.com 200 || true
+}
+
+deploy_sonarr() {
+  log "sonarr"
+  local CHANGED=0
+  install_file "$REPO_ROOT/services/sonarr/docker-compose.yml" /srv/sonarr/docker-compose.yml
+  (( DRY_RUN )) && return 0
+  # Ensure config dir exists (idempotent; first-time setup may have already done this).
+  if [[ ! -d /srv/sonarr/config ]]; then
+    install -d -o nthncrtr -g nthncrtr -m 0755 /srv/sonarr/config
+    note "created /srv/sonarr/config"
+  fi
+  compose_up sonarr
+  sleep 3
+  verify_url https://sonarr.nthncrtr.com 200 || true
 }
 
 deploy_pihole() {

@@ -40,6 +40,32 @@
         #   username: admin
         #   password: '{{HOMEPAGE_VAR_QBITTORRENT_PASSWORD}}'
 
+    - Radarr:
+        href: https://radarr.nthncrtr.com
+        icon: radarr.png
+        # Stub — container does not exist yet; activate after deploying:
+        #   sudo ./deploy.sh radarr
+        #   Add API key to /srv/homepage/secrets.env, then sudo ./deploy.sh homepage
+        # server: my-docker
+        # container: radarr
+        # widget:
+        #   type: radarr
+        #   url: http://host.docker.internal:7878
+        #   key: '{{HOMEPAGE_VAR_RADARR_KEY}}'
+
+    - Sonarr:
+        href: https://sonarr.nthncrtr.com
+        icon: sonarr.png
+        # Stub — container does not exist yet; activate after deploying:
+        #   sudo ./deploy.sh sonarr
+        #   Add API key to /srv/homepage/secrets.env, then sudo ./deploy.sh homepage
+        # server: my-docker
+        # container: sonarr
+        # widget:
+        #   type: sonarr
+        #   url: http://host.docker.internal:8989
+        #   key: '{{HOMEPAGE_VAR_SONARR_KEY}}'
+
 - starmaya:
     - Coffee Roasting:
         href: https://starmaya.nthncrtr.com

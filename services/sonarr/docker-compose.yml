@@ -1,0 +1,39 @@
+# Sonarr — managed by deploy.sh (sudo ./deploy.sh sonarr).
+#
+# Before first run on natto (deploy.sh handles dirs idempotently, but for
+# manual bring-up):
+#   mkdir -p /srv/sonarr/config
+#   mkdir -p /mnt/media/video/tv
+#   docker compose -f /srv/sonarr/docker-compose.yml up -d
+#   # Then in the WebUI (https://sonarr.nthncrtr.com):
+#   #   Settings → Media Management → Add Root Folder: /mnt/media/video/tv
+#   #   Settings → Download Clients → Add qBittorrent (category: tv)
+#   #   Settings → General → Security → copy the API key to secrets.env
+#
+# IMPORTANT — keep downloads on /mnt/media, not the SD card:
+#   In qBittorrent, set the default save path to /mnt/media/downloads/complete/
+#   (or a category-scoped path under that). Sonarr can then see the completed
+#   files at /mnt/media/downloads/complete/ inside the container and move them
+#   to /mnt/media/video/tv/ — all on the same (exfat) filesystem.
+#
+# Pi 4 B note: Sonarr's .NET runtime idles at ~150–250 MB but spikes during
+# initial library scans. mem_limit: 512m caps runaway growth so that one
+# greedy process cannot OOM-kill the other services on this 2 GB host.
+#
+# Ports:
+#   8989 — WebUI (matches Caddyfile)
+services:
+  sonarr:
+    image: lscr.io/linuxserver/sonarr:latest
+    container_name: sonarr
+    environment:
+      - PUID=1000
+      - PGID=1000
+      - TZ=America/New_York
+    volumes:
+      - ./config:/config
+      - /mnt/media:/mnt/media
+    ports:
+      - "8989:8989"
+    restart: unless-stopped
+    mem_limit: 512m

@@ -23,6 +23,16 @@ torrent.nthncrtr.com {
 	reverse_proxy natto.tailaf7ea6.ts.net:8080
 }
 
+# Movies
+radarr.nthncrtr.com {
+	reverse_proxy natto.tailaf7ea6.ts.net:7878
+}
+
+# TV series
+sonarr.nthncrtr.com {
+	reverse_proxy natto.tailaf7ea6.ts.net:8989
+}
+
 # Coffee roasting app — roaster-web on kvass:8080.
 starmaya.nthncrtr.com {
 	reverse_proxy kvass.tailaf7ea6.ts.net:8080

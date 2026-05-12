@@ -1,0 +1,36 @@
+# Prowlarr — managed by deploy.sh (sudo ./deploy.sh prowlarr).
+#
+# Prowlarr is an indexer manager for the *arr stack. It exposes a Torznab API
+# to Sonarr and Radarr so they can search private trackers (like beyond-hd.me)
+# without each app needing its own per-tracker integration.
+#
+# Before first run on natto (deploy.sh handles dirs idempotently, but for
+# manual bring-up):
+#   mkdir -p /srv/prowlarr/config
+#   docker compose -f /srv/prowlarr/docker-compose.yml up -d
+#   # Then in the WebUI (https://prowlarr.nthncrtr.com):
+#   #   Settings → General → Security → copy the API key to secrets.env
+#   #   Indexers → Add Indexer → search for "beyond-hd" (built-in definition)
+#   #   Apps → Add Application → Sonarr / Radarr (sync indexers automatically)
+#
+# Pi 4 B note: Prowlarr's .NET runtime is lighter than Sonarr/Radarr (~50–100 MB
+# idle). mem_limit: 256m is conservative but sufficient.
+#
+# Ports:
+#   9696 — WebUI (matches Caddyfile)
+services:
+  prowlarr:
+    image: lscr.io/linuxserver/prowlarr:latest
+    container_name: prowlarr
+    environment:
+      - PUID=1000
+      - PGID=1000
+      - TZ=America/New_York
+    volumes:
+      - ./config:/config
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    ports:
+      - "9696:9696"
+    restart: unless-stopped
+    mem_limit: 256m

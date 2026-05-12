@@ -58,6 +58,16 @@
           url: http://host.docker.internal:8989
           key: '{{HOMEPAGE_VAR_SONARR_KEY}}'
 
+    - Prowlarr:
+        href: https://prowlarr.nthncrtr.com
+        icon: prowlarr.png
+        server: my-docker
+        container: prowlarr
+        widget:
+          type: prowlarr
+          url: http://host.docker.internal:9696
+          key: '{{HOMEPAGE_VAR_PROWLARR_KEY}}'
+
 - starmaya:
     - Coffee Roasting:
         href: https://starmaya.nthncrtr.com

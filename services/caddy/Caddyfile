@@ -33,6 +33,11 @@ sonarr.nthncrtr.com {
 	reverse_proxy natto.tailaf7ea6.ts.net:8989
 }
 
+# Indexer manager
+prowlarr.nthncrtr.com {
+	reverse_proxy natto.tailaf7ea6.ts.net:9696
+}
+
 # Coffee roasting app — roaster-web on kvass:8080.
 starmaya.nthncrtr.com {
 	reverse_proxy kvass.tailaf7ea6.ts.net:8080

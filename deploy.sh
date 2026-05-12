@@ -11,8 +11,8 @@
 # One-time bootstrap (not handled here): git clone this repo to
 # /srv/nthncrtr-repo and put a read-only deploy key at /root/.ssh/.
 #
-# Services: caddy navidrome homepage backup qbittorrent radarr sonarr pihole starmaya
-# Default (no service args): caddy navidrome homepage backup qbittorrent radarr sonarr
+# Services: caddy navidrome homepage backup qbittorrent radarr sonarr prowlarr pihole starmaya
+# Default (no service args): caddy navidrome homepage backup qbittorrent radarr sonarr prowlarr
 #   — pihole is gated behind --yes-pihole (DNS outage for ~30s).
 #   — starmaya must be requested explicitly (deploys to kvass over ssh).
 #
@@ -31,8 +31,8 @@ usage() {
   cat <<'EOF'
 Usage: sudo ./deploy.sh [--dry-run] [--yes-pihole] [services...]
 
-Services: caddy navidrome homepage backup qbittorrent radarr sonarr pihole starmaya
-Default (no service args): caddy navidrome homepage backup qbittorrent radarr sonarr
+Services: caddy navidrome homepage backup qbittorrent radarr sonarr prowlarr pihole starmaya
+Default (no service args): caddy navidrome homepage backup qbittorrent radarr sonarr prowlarr
 EOF
   exit "${1:-0}"
 }
@@ -50,7 +50,7 @@ done
 
 SERVICES=("$@")
 if [[ ${#SERVICES[@]} -eq 0 ]]; then
-  SERVICES=(caddy navidrome homepage backup qbittorrent radarr sonarr)
+  SERVICES=(caddy navidrome homepage backup qbittorrent radarr sonarr prowlarr)
   (( YES_PIHOLE )) && SERVICES+=(pihole)
 fi
 
@@ -222,6 +222,20 @@ deploy_sonarr() {
   compose_up sonarr
   sleep 3
   verify_url https://sonarr.nthncrtr.com 200 || true
+}
+
+deploy_prowlarr() {
+  log "prowlarr"
+  local CHANGED=0
+  (( DRY_RUN )) || {
+    [[ -d /srv/prowlarr ]]        || { install -d -o nthncrtr -g nthncrtr -m 0755 /srv/prowlarr;        note "created /srv/prowlarr"; }
+    [[ -d /srv/prowlarr/config ]] || { install -d -o nthncrtr -g nthncrtr -m 0755 /srv/prowlarr/config; note "created /srv/prowlarr/config"; }
+  }
+  install_file "$REPO_ROOT/services/prowlarr/docker-compose.yml" /srv/prowlarr/docker-compose.yml
+  (( DRY_RUN )) && return 0
+  compose_up prowlarr
+  sleep 3
+  verify_url https://prowlarr.nthncrtr.com 200 || true
 }
 
 deploy_pihole() {

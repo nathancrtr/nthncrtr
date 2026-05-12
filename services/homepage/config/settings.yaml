@@ -9,17 +9,6 @@ cardBlur: md
 useEqualHeights: true
 hideVersion: true
 
-# Placeholder image — picsum returns a stable photo for a given seed.
-# Swap the URL (or drop a file into config/ and reference it as /icons/<file>)
-# to change the wallpaper. Filters tone the image down so card text stays
-# readable on top.
-background:
-  image: https://picsum.photos/seed/nthncrtr/2560/1440
-  blur: sm
-  saturate: 60
-  brightness: 60
-  opacity: 70
-
 # Per-group layout. `style: row` flows services/bookmarks horizontally with
 # the group title to the left, instead of the default vertical-grid look.
 layout:

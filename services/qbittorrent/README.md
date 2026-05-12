@@ -29,4 +29,4 @@ Ports: `8080` (WebUI) + `6881 tcp+udp` (peer port; open in firewall if you want 
 
 ## Homepage widget
 
-The qBittorrent block in `services/homepage/config/services.yaml` is currently link-only. After deploy, uncomment the widget block and add `HOMEPAGE_VAR_QBITTORRENT_PASSWORD=` to `/srv/homepage/secrets.env`, then restart Homepage.
+The qBittorrent widget in `services/homepage/config/services.yaml` is active. Until the container is running it will show as stopped. After deploying, add `HOMEPAGE_VAR_QBITTORRENT_PASSWORD=<password>` to `/srv/homepage/secrets.env` (mode 0600) and run `sudo ./deploy.sh homepage` to pick up the secret.

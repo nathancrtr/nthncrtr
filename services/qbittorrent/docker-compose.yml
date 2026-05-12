@@ -1,7 +1,7 @@
-# STUB — not yet deployed. The torrent.nthncrtr.com Caddyfile route
-# already proxies to natto:8080, so bringing this up will activate it.
+# qBittorrent — managed by deploy.sh (deploy.sh qbittorrent).
 #
-# Before first run on natto:
+# Before first run on natto (deploy.sh handles dirs idempotently, but for
+# manual bring-up):
 #   mkdir -p /srv/qbittorrent/{config,downloads}
 #   docker compose -f /srv/qbittorrent/docker-compose.yml up -d
 #   docker logs qbittorrent | grep -i "webui password"   # one-time temp pw

@@ -6,9 +6,10 @@ Torrent client. The Caddyfile route `torrent.nthncrtr.com` already points at `na
 
 ```sh
 ssh natto
-sudo install -d -o nthncrtr -g nthncrtr -m 0755 /srv/qbittorrent/{config,downloads}
-sudo cp /opt/nthncrtr/repo/services/qbittorrent/docker-compose.yml /srv/qbittorrent/
-cd /srv/qbittorrent && docker compose up -d
+# First-time manual steps — deploy.sh handles this idempotently on subsequent runs:
+sudo mkdir -p /srv/qbittorrent/{config,downloads}
+sudo chown nthncrtr:nthncrtr /srv/qbittorrent/{config,downloads}
+cd /srv/nthncrtr-repo && git pull && sudo ./deploy.sh qbittorrent
 docker logs qbittorrent | grep -i 'webui password'   # one-time temporary password
 ```
 

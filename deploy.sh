@@ -11,8 +11,8 @@
 # One-time bootstrap (not handled here): git clone this repo to
 # /srv/nthncrtr-repo and put a read-only deploy key at /root/.ssh/.
 #
-# Services: caddy navidrome homepage backup pihole starmaya
-# Default (no service args): caddy navidrome homepage backup
+# Services: caddy navidrome homepage backup qbittorrent pihole starmaya
+# Default (no service args): caddy navidrome homepage backup qbittorrent
 #   — pihole is gated behind --yes-pihole (DNS outage for ~30s).
 #   — starmaya must be requested explicitly (deploys to kvass over ssh).
 #
@@ -31,8 +31,8 @@ usage() {
   cat <<'EOF'
 Usage: sudo ./deploy.sh [--dry-run] [--yes-pihole] [services...]
 
-Services: caddy navidrome homepage backup pihole starmaya
-Default (no service args): caddy navidrome homepage backup
+Services: caddy navidrome homepage backup qbittorrent pihole starmaya
+Default (no service args): caddy navidrome homepage backup qbittorrent
 EOF
   exit "${1:-0}"
 }
@@ -50,7 +50,7 @@ done
 
 SERVICES=("$@")
 if [[ ${#SERVICES[@]} -eq 0 ]]; then
-  SERVICES=(caddy navidrome homepage backup)
+  SERVICES=(caddy navidrome homepage backup qbittorrent)
   (( YES_PIHOLE )) && SERVICES+=(pihole)
 fi
 
@@ -172,6 +172,21 @@ deploy_homepage() {
   (( DRY_RUN )) && return 0
   sleep 3
   verify_url https://home.nthncrtr.com 200 || true
+}
+
+deploy_qbittorrent() {
+  log "qbittorrent"
+  local CHANGED=0
+  install_file "$REPO_ROOT/services/qbittorrent/docker-compose.yml" /srv/qbittorrent/docker-compose.yml
+  (( DRY_RUN )) && return 0
+  # Ensure data dirs exist (idempotent; first-time setup may have already done this).
+  if [[ ! -d /srv/qbittorrent/config || ! -d /srv/qbittorrent/downloads ]]; then
+    install -d -o nthncrtr -g nthncrtr -m 0755 /srv/qbittorrent/config /srv/qbittorrent/downloads
+    note "created /srv/qbittorrent/{config,downloads}"
+  fi
+  compose_up qbittorrent
+  sleep 3
+  verify_url https://torrent.nthncrtr.com 200 || true
 }
 
 deploy_pihole() {

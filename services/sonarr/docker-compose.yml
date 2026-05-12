@@ -33,6 +33,8 @@ services:
     volumes:
       - ./config:/config
       - /mnt/media:/mnt/media
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
     ports:
       - "8989:8989"
     restart: unless-stopped

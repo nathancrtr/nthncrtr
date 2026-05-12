@@ -82,7 +82,7 @@ dig +short home.nthncrtr.com    # should resolve to the new tailnet IP
 
 ### 8. Start docker services and smoke-test
 
-In dependency order. Pi-hole first (DNS), then Navidrome and Homepage (independent), then qBittorrent if/when it's deployed.
+In dependency order. Pi-hole first (DNS), then Navidrome and Homepage (independent), then qBittorrent.
 
 ```sh
 cd /srv/pihole && sudo docker compose up -d
@@ -94,9 +94,8 @@ sleep 5 && curl -fsSL -o /dev/null -w '%{http_code}\n' https://natto.nthncrtr.co
 cd /srv/homepage && sudo docker compose up -d
 sleep 15 && curl -fsSL -o /dev/null -w '%{http_code}\n' https://home.nthncrtr.com    # 200
 
-# qBittorrent (if deployed):
-# cd /srv/qbittorrent && sudo docker compose up -d
-# curl -fsSL -o /dev/null -w '%{http_code}\n' https://torrent.nthncrtr.com/    # 200 or 401
+cd /srv/qbittorrent && sudo docker compose up -d
+sleep 5 && curl -fsSL -o /dev/null -w '%{http_code}\n' https://torrent.nthncrtr.com/    # 200 or 401
 ```
 
 ### 9. Decommission the old host
@@ -106,9 +105,10 @@ Only after all smoke tests pass on the new natto:
 ```sh
 # On old natto
 sudo systemctl stop caddy.service
-cd /srv/pihole    && sudo docker compose down
-cd /srv/navidrome && sudo docker compose down
-cd /srv/homepage  && sudo docker compose down
+cd /srv/pihole       && sudo docker compose down
+cd /srv/navidrome    && sudo docker compose down
+cd /srv/homepage     && sudo docker compose down
+cd /srv/qbittorrent  && sudo docker compose down
 sudo tailscale logout
 sudo poweroff
 ```

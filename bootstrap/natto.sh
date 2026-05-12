@@ -261,6 +261,8 @@ step_srv() {
               -g "$(getent group  1000 | cut -d: -f1)" -m 0755 /srv/radarr
   install -d -o "$(getent passwd 1000 | cut -d: -f1)" \
               -g "$(getent group  1000 | cut -d: -f1)" -m 0755 /srv/sonarr
+  install -d -o "$(getent passwd 1000 | cut -d: -f1)" \
+              -g "$(getent group  1000 | cut -d: -f1)" -m 0755 /srv/qbittorrent
 
   # Copy compose files (root-owned, world-readable so the docker group user
   # can `docker compose ...` against them).
@@ -274,6 +276,8 @@ step_srv() {
     "$REPO_ROOT/services/radarr/docker-compose.yml"    /srv/radarr/docker-compose.yml
   install -o root -g root -m 0644 \
     "$REPO_ROOT/services/sonarr/docker-compose.yml"    /srv/sonarr/docker-compose.yml
+  install -o root -g root -m 0644 \
+    "$REPO_ROOT/services/qbittorrent/docker-compose.yml" /srv/qbittorrent/docker-compose.yml
 }
 
 # ---------------------------------------------------------------------------
@@ -329,9 +333,10 @@ Next steps (operator):
        systemctl status caddy.service
 
   5. Start docker services one at a time and verify each via its public URL:
-       cd /srv/pihole    && docker compose up -d   # then dig @127.0.0.1 example.com
-       cd /srv/navidrome && docker compose up -d   # then curl https://natto.nthncrtr.com/ping
-       cd /srv/homepage  && docker compose up -d   # then curl https://home.nthncrtr.com
+       cd /srv/pihole       && docker compose up -d   # then dig @127.0.0.1 example.com
+       cd /srv/navidrome   && docker compose up -d   # then curl https://natto.nthncrtr.com/ping
+       cd /srv/homepage    && docker compose up -d   # then curl https://home.nthncrtr.com
+       cd /srv/qbittorrent && docker compose up -d   # then curl https://torrent.nthncrtr.com
 
   6. Set up the CD pipeline (one-time, if /srv/nthncrtr-repo isn't already in place):
        a. Add the deploy-key pubkey (printed by step_deploy_key above) to the

@@ -122,11 +122,15 @@ deploy_caddy() {
   log "caddy"
   # Syntax check first. `caddy adapt` won't touch live state and won't try to
   # provision TLS (which would require CF_API_TOKEN). `caddy validate` would.
-  if ! caddy adapt --adapter caddyfile --config "$REPO_ROOT/services/caddy/Caddyfile" >/dev/null 2>/tmp/caddy-adapt.err; then
+  local caddy_err_file
+  caddy_err_file=$(mktemp)
+  if ! caddy adapt --adapter caddyfile --config "$REPO_ROOT/services/caddy/Caddyfile" >/dev/null 2>"$caddy_err_file"; then
     err "caddy adapt failed; aborting caddy deploy (live config untouched)"
-    sed 's/^/      /' /tmp/caddy-adapt.err >&2
+    sed 's/^/      /' "$caddy_err_file" >&2
+    rm -f "$caddy_err_file"
     return 1
   fi
+  rm -f "$caddy_err_file"
   local CHANGED=0
   install_file "$REPO_ROOT/services/caddy/Caddyfile" /etc/caddy/Caddyfile 0644 caddy:caddy
   local caddyfile_changed=$CHANGED
@@ -192,13 +196,15 @@ deploy_qbittorrent() {
 deploy_radarr() {
   log "radarr"
   local CHANGED=0
+  (( DRY_RUN )) || {
+    # Ensure /srv/radarr/ and /srv/radarr/config exist before install_file
+    # tries to write into them. /srv/radarr/ is not created by bootstrap until
+    # it is re-run; on first deploy on an existing natto the dir may be absent.
+    [[ -d /srv/radarr ]]        || { install -d -o nthncrtr -g nthncrtr -m 0755 /srv/radarr;        note "created /srv/radarr"; }
+    [[ -d /srv/radarr/config ]] || { install -d -o nthncrtr -g nthncrtr -m 0755 /srv/radarr/config; note "created /srv/radarr/config"; }
+  }
   install_file "$REPO_ROOT/services/radarr/docker-compose.yml" /srv/radarr/docker-compose.yml
   (( DRY_RUN )) && return 0
-  # Ensure config dir exists (idempotent; first-time setup may have already done this).
-  if [[ ! -d /srv/radarr/config ]]; then
-    install -d -o nthncrtr -g nthncrtr -m 0755 /srv/radarr/config
-    note "created /srv/radarr/config"
-  fi
   compose_up radarr
   sleep 3
   verify_url https://radarr.nthncrtr.com 200 || true
@@ -207,13 +213,12 @@ deploy_radarr() {
 deploy_sonarr() {
   log "sonarr"
   local CHANGED=0
+  (( DRY_RUN )) || {
+    [[ -d /srv/sonarr ]]        || { install -d -o nthncrtr -g nthncrtr -m 0755 /srv/sonarr;        note "created /srv/sonarr"; }
+    [[ -d /srv/sonarr/config ]] || { install -d -o nthncrtr -g nthncrtr -m 0755 /srv/sonarr/config; note "created /srv/sonarr/config"; }
+  }
   install_file "$REPO_ROOT/services/sonarr/docker-compose.yml" /srv/sonarr/docker-compose.yml
   (( DRY_RUN )) && return 0
-  # Ensure config dir exists (idempotent; first-time setup may have already done this).
-  if [[ ! -d /srv/sonarr/config ]]; then
-    install -d -o nthncrtr -g nthncrtr -m 0755 /srv/sonarr/config
-    note "created /srv/sonarr/config"
-  fi
   compose_up sonarr
   sleep 3
   verify_url https://sonarr.nthncrtr.com 200 || true

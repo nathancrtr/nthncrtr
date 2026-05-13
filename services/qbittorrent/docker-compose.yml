@@ -11,8 +11,9 @@
 # torrent.nthncrtr.com → natto:8080.
 #
 # The torrent peer port is the *forwarded* port that Proton assigns
-# dynamically — see services/qbittorrent/README.md and
-# runbooks/proton-vpn-setup.md. It is not a fixed 6881.
+# dynamically. The qbit-port-updater sidecar watches gluetun's
+# forwarded_port file and pushes the current port to qBit's WebUI API,
+# so manual reconfiguration on every Gluetun reconnect isn't needed.
 services:
   gluetun:
     image: qmcgaw/gluetun:latest
@@ -23,6 +24,9 @@ services:
       - /dev/net/tun:/dev/net/tun
     ports:
       - "8080:8080"
+    volumes:
+      # Shared with qbit-port-updater so it can read forwarded_port.
+      - ./gluetun-state:/tmp/gluetun
     env_file:
       - path: secrets.env
         required: false
@@ -44,4 +48,20 @@ services:
       - /mnt/media:/mnt/media
     depends_on:
       - gluetun
+    restart: unless-stopped
+
+  qbit-port-updater:
+    image: curlimages/curl:latest
+    container_name: qbit-port-updater
+    network_mode: "service:gluetun"
+    volumes:
+      - ./gluetun-state:/state:ro
+      - ./port-updater.sh:/port-updater.sh:ro
+    entrypoint: ["/bin/sh", "/port-updater.sh"]
+    environment:
+      - POLL_INTERVAL=60
+      - TZ=America/New_York
+    depends_on:
+      - gluetun
+      - qbittorrent
     restart: unless-stopped

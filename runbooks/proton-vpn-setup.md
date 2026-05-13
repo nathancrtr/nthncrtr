@@ -1,6 +1,6 @@
 # Runbook: Integrating Proton VPN with qBittorrent
 
-This runbook details the deployment of a containerized split-tunnel VPN using Gluetun and Proton VPN. The architecture ensures only qBittorrent traffic is routed through the VPN, preserving `natto`'s local ingress, Tailscale connectivity, and Pi-hole operations.
+This runbook details the deployment of a containerized split-tunnel VPN using Gluetun and Proton VPN. The architecture ensures only qBittorrent traffic is routed through the VPN, preserving `natto`'s local ingress, Tailscale connectivity, and Pi-hole operations. A small port-updater sidecar keeps qBit's listening port in sync with the dynamic port Proton assigns on each reconnect.
 
 ## Preconditions
 - A Proton VPN Plus subscription.
@@ -36,40 +36,42 @@ sudoedit /srv/qbittorrent/secrets.env
 
 ## 3. docker-compose.yml
 
-`services/qbittorrent/docker-compose.yml` is already updated to introduce the Gluetun sidecar. The WebUI port is published on the `gluetun` container, since qBittorrent uses `network_mode: service:gluetun` and cannot publish its own ports.
+`services/qbittorrent/docker-compose.yml` defines three services: `gluetun` (Proton VPN tunnel), `qbittorrent` (sharing gluetun's netns), and `qbit-port-updater` (a tiny sidecar that watches gluetun's forwarded-port file and pushes changes into qBit's WebUI API). The WebUI port 8080 is published on the `gluetun` container, since qBittorrent uses `network_mode: service:gluetun` and cannot publish its own ports.
+
+The `./gluetun-state` bind mount on gluetun (`:/tmp/gluetun`) is shared read-only with the updater (`:/state`), so it can read `forwarded_port` without `docker exec` or the Gluetun control server.
 
 ```yaml
 services:
   gluetun:
     image: qmcgaw/gluetun:latest
-    container_name: gluetun
-    cap_add:
-      - NET_ADMIN
-    devices:
-      - /dev/net/tun:/dev/net/tun
-    ports:
-      - "8080:8080"  # WebUI port exposed via Gluetun for Caddy ingress
-    env_file:
-      - path: secrets.env
-        required: false
-    environment:
-      - TZ=America/New_York
+    cap_add: [NET_ADMIN]
+    devices: ["/dev/net/tun:/dev/net/tun"]
+    ports: ["8080:8080"]
+    volumes:
+      - ./gluetun-state:/tmp/gluetun  # shared with qbit-port-updater
+    env_file: [{ path: secrets.env, required: false }]
+    environment: [TZ=America/New_York]
     restart: unless-stopped
 
   qbittorrent:
     image: lscr.io/linuxserver/qbittorrent:latest
-    container_name: qbittorrent
-    network_mode: "service:gluetun"  # Routes all qBit traffic through the VPN sidecar
-    environment:
-      - PUID=1000
-      - PGID=1000
-      - TZ=America/New_York
-      - WEBUI_PORT=8080
+    network_mode: "service:gluetun"
+    environment: [PUID=1000, PGID=1000, TZ=America/New_York, WEBUI_PORT=8080]
     volumes:
       - ./config:/config
-      - /mnt/media:/mnt/media  # Bound to media root to support Radarr/Sonarr hardlinking
-    depends_on:
-      - gluetun
+      - /mnt/media:/mnt/media   # for Radarr/Sonarr hardlinking
+    depends_on: [gluetun]
+    restart: unless-stopped
+
+  qbit-port-updater:
+    image: curlimages/curl:latest
+    network_mode: "service:gluetun"
+    volumes:
+      - ./gluetun-state:/state:ro
+      - ./port-updater.sh:/port-updater.sh:ro
+    entrypoint: ["/bin/sh", "/port-updater.sh"]
+    environment: [POLL_INTERVAL=60, TZ=America/New_York]
+    depends_on: [gluetun, qbittorrent]
     restart: unless-stopped
 ```
 
@@ -86,39 +88,39 @@ sudo ./deploy.sh qbittorrent
 
 `deploy.sh` creates `/mnt/media/_unsorted/torrents` (owned by `nthncrtr:nthncrtr`) so qBit has a save path ready post-cutover. The old `/srv/qbittorrent/downloads/` directory is no longer used and can be removed by hand once you've verified the new layout works.
 
-## 5. Retrieve forwarded port
-
-Once both containers are healthy, retrieve the dynamically assigned forwarded port. Two equivalent options:
-
-```sh
-# Canonical — Gluetun writes the port to a file:
-docker exec gluetun cat /tmp/gluetun/forwarded_port
-
-# Or via logs (best-effort grep):
-docker logs gluetun 2>&1 | grep -iE "port.*forward"
-```
-
-Note the forwarded port number provided by Proton.
-
-## 6. Configure qBittorrent (kill switch & port)
+## 5. Configure qBittorrent (one-time)
 
 Log into the qBittorrent WebUI at `https://torrent.nthncrtr.com` and apply:
 
 **Options → Downloads:**
-- Default Save Path: `/mnt/media/_unsorted/torrents`
+- Default Save Path: `/mnt/media/_unsorted/torrents`.
 
 **Options → Connection:**
-- "Port used for incoming connections": enter the forwarded port from step 5.
 - Uncheck "Use UPnP / NAT-PMP port forwarding from my router".
+- *Do not set the listening port manually.* The port-updater sidecar manages it from gluetun's `forwarded_port` file.
 
 **Options → Advanced:**
 - Change "Network Interface" from `Any interface` to `tun0`. Gluetun normalizes both WireGuard and OpenVPN to the `tun0` name. This is defense-in-depth — the implicit kill switch already comes from `network_mode: service:gluetun` (no Gluetun = no network for qBit at all), but binding to `tun0` ensures qBit won't fall back to the Docker bridge interface if the netns is otherwise reachable.
 
-## Known limitation: dynamic forwarded port
+**Options → Web UI → Authentication:**
+- Enable "Bypass authentication for clients on localhost". This is required for the port-updater sidecar — it runs in gluetun's netns, so it appears to qBit as 127.0.0.1 and would otherwise be rejected. Connections from outside the netns (natto's host, your browser, other containers) still arrive via the Docker bridge and continue to need a password.
 
-Proton's port-forwarding API issues a port that **changes** when Gluetun reconnects (e.g. after a Proton-side disconnect or a container restart). The port you set in step 6 will go stale on the next reconnect, and inbound peer connections will silently fail until you re-do step 5 + step 6.
+## 6. Verify the port-updater
 
-Automating this loop — Gluetun control server API → qBittorrent WebUI API — is a follow-up worth its own mission. Until then, after any `docker compose restart gluetun` or extended Proton outage, expect to re-check the forwarded port.
+```sh
+# Port-updater logs should show it pushing the current port:
+docker logs qbit-port-updater | tail -10
+# Expect a line like:  ... qbit-port-updater: pushed port 36014 to qBittorrent
+
+# Gluetun's view of the current forwarded port (this is what the updater reads):
+docker exec gluetun cat /tmp/gluetun/forwarded_port
+
+# qBit's view of its current listening port (sanity check — should match):
+curl -fsS https://torrent.nthncrtr.com/api/v2/app/preferences \
+  --cookie "SID=<browser session cookie>" | jq .listen_port
+```
+
+If the updater logs `WARN: failed to push port` repeatedly, the most likely cause is that **Options → Web UI → "Bypass authentication for clients on localhost"** is still unchecked.
 
 ## Verification
 
@@ -131,4 +133,7 @@ docker exec qbittorrent sh -c 'wget -qO- https://api.ipify.org'           # shou
 
 # Forwarded port is set:
 docker exec gluetun cat /tmp/gluetun/forwarded_port                        # should print a port number
+
+# Port-updater pushed the port:
+docker logs qbit-port-updater | tail -5                                    # expect "pushed port NNNNN"
 ```

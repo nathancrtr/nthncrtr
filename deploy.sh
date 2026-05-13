@@ -182,12 +182,20 @@ deploy_qbittorrent() {
   log "qbittorrent"
   local CHANGED=0
   install_file "$REPO_ROOT/services/qbittorrent/docker-compose.yml" /srv/qbittorrent/docker-compose.yml
+  install_file "$REPO_ROOT/services/qbittorrent/port-updater.sh"    /srv/qbittorrent/port-updater.sh 0755
   (( DRY_RUN )) && return 0
   # qBit config lives at /srv/qbittorrent/config; downloads land under /mnt/media
   # (mounted directly so Radarr/Sonarr can hardlink final files instead of copying).
+  # gluetun-state is a bind mount shared between gluetun (writer) and the
+  # qbit-port-updater sidecar (reader). Pre-create with nthncrtr ownership
+  # so gluetun (UID 1000 in-container) can write forwarded_port to it.
   [[ -d /srv/qbittorrent/config ]] || {
     install -d -o nthncrtr -g nthncrtr -m 0755 /srv/qbittorrent/config
     note "created /srv/qbittorrent/config"
+  }
+  [[ -d /srv/qbittorrent/gluetun-state ]] || {
+    install -d -o nthncrtr -g nthncrtr -m 0755 /srv/qbittorrent/gluetun-state
+    note "created /srv/qbittorrent/gluetun-state"
   }
   [[ -d /mnt/media/_unsorted/torrents ]] || {
     install -d -o nthncrtr -g nthncrtr -m 0755 /mnt/media/_unsorted/torrents

@@ -26,17 +26,28 @@ docker logs qbittorrent | grep -i 'webui password'   # one-time temporary passwo
 
 Then log in at `https://torrent.nthncrtr.com`, change the admin password, and (recommended) restrict the WebUI to LAN-only via Settings → Web UI.
 
-## Post-cutover WebUI config
+## One-time WebUI config
 
-Options → Downloads → Default Save Path: `/mnt/media/_unsorted/torrents` (deploy.sh creates the directory, owned by nthncrtr:nthncrtr). The earlier `/srv/qbittorrent/downloads/` mount has been removed — qbit now sees `/mnt/media` directly so Radarr/Sonarr can hardlink final files instead of copying.
+After first deploy, log in at `https://torrent.nthncrtr.com` and set:
 
-Options → Connection: set "Port used for incoming connections" to the forwarded port reported by Proton (see [the runbook](../../runbooks/proton-vpn-setup.md#5-retrieve-forwarded-port)). Uncheck "Use UPnP / NAT-PMP port forwarding from my router".
+- **Options → Downloads → Default Save Path**: `/mnt/media/_unsorted/torrents` (deploy.sh creates this directory, owned by nthncrtr:nthncrtr). The earlier `/srv/qbittorrent/downloads/` mount has been removed — qbit now sees `/mnt/media` directly so Radarr/Sonarr can hardlink final files instead of copying.
+- **Options → Connection**: uncheck "Use UPnP / NAT-PMP port forwarding from my router". (The listening port itself is managed by the port-updater sidecar — don't set it manually.)
+- **Options → Advanced → Network Interface**: `tun0`. Gluetun normalizes the WireGuard interface to `tun0`, same name as OpenVPN — qBit will refuse to bind if Gluetun's tunnel isn't up.
+- **Options → Web UI → Authentication**: enable "Bypass authentication for clients on localhost". This is required for the port-updater sidecar (it runs in gluetun's netns, so it reaches qBit as 127.0.0.1 and would otherwise be rejected). Connections from outside the netns — natto's host processes, other Docker containers, your browser — still arrive over the Docker bridge and continue to need a password.
 
-Options → Advanced: set Network Interface to `tun0`. (Gluetun normalizes the WireGuard interface to `tun0`, same name as OpenVPN — qBit will refuse to bind if Gluetun's tunnel isn't up.)
+## Port-updater sidecar
 
-## Known limitation: dynamic forwarded port
+A small `qbit-port-updater` container runs alongside gluetun in the same network namespace. It watches `/tmp/gluetun/forwarded_port` (gluetun's running record of the current Proton-assigned port) and pushes any change to qBit's `setPreferences` API. The script is `services/qbittorrent/port-updater.sh`, installed to `/srv/qbittorrent/port-updater.sh` and bind-mounted into the container — edit it on natto with `sudoedit` and `docker compose restart qbit-port-updater` to iterate.
 
-Proton's port-forwarding API hands out a *dynamic* port that can change when Gluetun reconnects (e.g. after a Proton-side disconnect or a container restart). The manually-set qBit port will then go stale until you re-do the Connection step. Automating this via Gluetun's control server API + qBit's WebUI API is a future improvement.
+**Debugging:**
+
+```sh
+docker logs qbit-port-updater                                # see what it's done
+docker exec gluetun cat /tmp/gluetun/forwarded_port          # current Proton port
+docker exec qbit-port-updater cat /state/forwarded_port      # same file, from sidecar's view
+```
+
+A common failure mode: `WARN: failed to push port` — usually means qBit's localhost-bypass setting wasn't enabled. Re-check the Web UI Authentication option above.
 
 ## Files / paths
 
@@ -44,9 +55,11 @@ Proton's port-forwarding API hands out a *dynamic* port that can change when Glu
 |---|---|
 | Compose | `/srv/qbittorrent/docker-compose.yml` |
 | qBit config | `/srv/qbittorrent/config/` |
+| Gluetun state | `/srv/qbittorrent/gluetun-state/` (contains `forwarded_port`, `ip`, etc.) |
+| Port-updater script | `/srv/qbittorrent/port-updater.sh` (bind-mounted into the sidecar) |
 | Secrets | `/srv/qbittorrent/secrets.env` (mode 0600, root:root, NOT in repo) |
 | qBit data root | `/mnt/media/` (downloads land in `_unsorted/torrents/` by default) |
-| Containers | `qbittorrent` (LSIO image), `gluetun` (qmcgaw/gluetun) |
+| Containers | `qbittorrent` (LSIO), `gluetun` (qmcgaw/gluetun), `qbit-port-updater` (curlimages/curl) |
 
 Ports: `8080` (WebUI, published on the gluetun container). The torrent peer port is whatever Proton's port-forward assigns; it is reachable via the VPN's external IP, not via natto's IP, so no host-side publish is needed.
 

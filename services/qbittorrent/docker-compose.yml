@@ -1,20 +1,39 @@
-# qBittorrent — managed by deploy.sh (deploy.sh qbittorrent).
+# qBittorrent + Gluetun (Proton VPN) — managed by deploy.sh (deploy.sh qbittorrent).
 #
-# Before first run on natto (deploy.sh handles dirs idempotently, but for
-# manual bring-up):
-#   mkdir -p /srv/qbittorrent/{config,downloads}
-#   docker compose -f /srv/qbittorrent/docker-compose.yml up -d
-#   docker logs qbittorrent | grep -i "webui password"   # one-time temp pw
-# Then log in at https://torrent.nthncrtr.com, change the admin password,
-# and (recommended) restrict the WebUI to LAN-only via Settings → Web UI.
+# Architecture: gluetun establishes a Proton VPN WireGuard tunnel and exposes
+# its network namespace via network_mode: service:gluetun. qbittorrent shares
+# that namespace, so 100% of its traffic exits through the VPN. If gluetun
+# dies, qbittorrent has no network at all (implicit kill switch). Setting
+# qBit's Network Interface to tun0 in the WebUI is defense-in-depth.
 #
-# Ports:
-#   8080 — WebUI (matches Caddyfile)
-#   6881 tcp+udp — torrent peer port (open in firewall if seeding externally)
+# WebUI port 8080 is published on gluetun (not qbittorrent — it can't publish
+# ports when sharing another container's netns). Caddy still routes
+# torrent.nthncrtr.com → natto:8080.
+#
+# The torrent peer port is the *forwarded* port that Proton assigns
+# dynamically — see services/qbittorrent/README.md and
+# runbooks/proton-vpn-setup.md. It is not a fixed 6881.
 services:
+  gluetun:
+    image: qmcgaw/gluetun:latest
+    container_name: gluetun
+    cap_add:
+      - NET_ADMIN
+    devices:
+      - /dev/net/tun:/dev/net/tun
+    ports:
+      - "8080:8080"
+    env_file:
+      - path: secrets.env
+        required: false
+    environment:
+      - TZ=America/New_York
+    restart: unless-stopped
+
   qbittorrent:
     image: lscr.io/linuxserver/qbittorrent:latest
     container_name: qbittorrent
+    network_mode: "service:gluetun"
     environment:
       - PUID=1000
       - PGID=1000
@@ -22,9 +41,7 @@ services:
       - WEBUI_PORT=8080
     volumes:
       - ./config:/config
-      - ./downloads:/downloads
-    ports:
-      - "8080:8080"
-      - "6881:6881"
-      - "6881:6881/udp"
+      - /mnt/media:/mnt/media
+    depends_on:
+      - gluetun
     restart: unless-stopped

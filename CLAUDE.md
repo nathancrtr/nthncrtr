@@ -6,7 +6,7 @@ You are working in the version-controlled config + operational runbook for a sma
 
 | Host | Hostname | Role | OS / Arch | Services |
 |---|---|---|---|---|
-| **natto** | `natto` | Hub | Raspberry Pi, arm64, Debian 13 | Caddy (native, systemd), Pi-hole, Navidrome, Homepage, qBittorrent (stub) — all docker-managed compose projects |
+| **natto** | `natto` | Hub | Raspberry Pi, arm64, Debian 13 | Caddy (native, systemd), Pi-hole, Navidrome, Homepage, qBittorrent (behind Gluetun + Proton VPN) — all docker-managed compose projects |
 | **starmaya** | `kvass` (machine), `starmaya` (canonical) | Workshop appliance | Raspberry Pi, arm64, Debian 13 | `roaster-daemon` + `roaster-web` (Node.js, native systemd). On natto's tailnet as `kvass.tailaf7ea6.ts.net`. |
 | **workhorse** | `workhorse` | Client + dev | Intel Mac | Tailscale only — hosts no services. This is where you typically run from. |
 
@@ -30,7 +30,7 @@ External access flow: `*.nthncrtr.com` → Cloudflare DNS (DNS-01 challenge toke
     ├── pihole/                  # docker-compose.yml
     ├── navidrome/               # docker-compose.yml
     ├── homepage/                # docker-compose.yml + config/ + secrets.env.example + .gitignore
-    ├── qbittorrent/             # stub compose (not yet deployed)
+    ├── qbittorrent/             # qBit + Gluetun (Proton VPN) sidecar
     ├── starmaya/                # systemd units + udev rule (deploys to kvass)
     └── backup/                  # backup.sh + natto-backup.{service,timer}
 ```
@@ -40,7 +40,7 @@ On natto, deployed config lives at `/srv/<svc>/` with the compose file co-locate
 ## Naming conventions you must know
 
 - **starmaya vs kvass**: the docs and repo paths always use `starmaya`. The actual machine you SSH to right now is named `kvass`. Treat `starmaya` as the canonical service name and intended future hostname. ([memory](../../.claude/projects/-Users-nathancarter-repos-nthncrtr/memory/project_starmaya_kvass.md))
-- Container names on natto: `pihole`, `navidrome-navidrome-1` (compose v2 default with project=navidrome), `homepage`, eventually `qbittorrent`.
+- Container names on natto: `pihole`, `navidrome-navidrome-1` (compose v2 default with project=navidrome), `homepage`, `qbittorrent`, `gluetun` (Proton VPN sidecar for `qbittorrent`).
 - Service data on natto lives under `/srv/<svc>/`. `/home/nthncrtr/{navidrome,homepage,docker}/` are the **previous** locations and are now empty parents — the move to `/srv/` happened in mission 1.7.
 - The 5TB drive is at `/mnt/media` (exfat, uid=1000:gid=1000). Music in `/mnt/media/music`, backups in `/mnt/media/backups`, future video in `/mnt/media/video`, junk in `/mnt/media/_unsorted/`. Do NOT call it "/mnt/music" — that path doesn't exist.
 

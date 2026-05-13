@@ -183,10 +183,22 @@ deploy_qbittorrent() {
   local CHANGED=0
   install_file "$REPO_ROOT/services/qbittorrent/docker-compose.yml" /srv/qbittorrent/docker-compose.yml
   (( DRY_RUN )) && return 0
-  # Ensure data dirs exist (idempotent; first-time setup may have already done this).
-  if [[ ! -d /srv/qbittorrent/config || ! -d /srv/qbittorrent/downloads ]]; then
-    install -d -o nthncrtr -g nthncrtr -m 0755 /srv/qbittorrent/config /srv/qbittorrent/downloads
-    note "created /srv/qbittorrent/{config,downloads}"
+  # qBit config lives at /srv/qbittorrent/config; downloads land under /mnt/media
+  # (mounted directly so Radarr/Sonarr can hardlink final files instead of copying).
+  [[ -d /srv/qbittorrent/config ]] || {
+    install -d -o nthncrtr -g nthncrtr -m 0755 /srv/qbittorrent/config
+    note "created /srv/qbittorrent/config"
+  }
+  [[ -d /mnt/media/_unsorted/torrents ]] || {
+    install -d -o nthncrtr -g nthncrtr -m 0755 /mnt/media/_unsorted/torrents
+    note "created /mnt/media/_unsorted/torrents"
+  }
+  # Warn if secrets.env is missing — gluetun will start without it but won't
+  # establish a tunnel, and qbittorrent (network_mode: service:gluetun) will
+  # have no network at all.
+  if [[ ! -f /srv/qbittorrent/secrets.env ]]; then
+    warn "/srv/qbittorrent/secrets.env not found — see services/qbittorrent/README.md"
+    warn "qBittorrent will have no network until Proton VPN credentials are provisioned."
   fi
   compose_up qbittorrent
   sleep 3

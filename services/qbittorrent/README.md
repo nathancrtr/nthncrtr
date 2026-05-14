@@ -71,6 +71,8 @@ If `/srv/qbittorrent/config/qBittorrent/BT_backup/` is gone (fresh install, lost
 
 2. **`qbit-bulk-add.sh`** — bash. Takes the directory of .torrent files produced above and POSTs each to qBit's WebUI API. Runs as a one-shot `curlimages/curl` container inside gluetun's netns, so qBit's localhost auth-bypass applies — no password needed and nothing crosses the docker bridge. qBit dedupes by infohash, so this is safe to re-run.
 
+3. **`orpheus-plan.py`** — Python 3, stdlib only. Optional. Enriches the `manifest-snatched.json` with per-torrent freeleech status (`action=torrent` API, rate-limited, resumable via checkpoint) and emits a sortable CSV recovery plan: which torrents are globally FL (free), which are largest candidates for token application, which fit in your ratio budget, which to abandon. Use when ratio cost matters and you want a deliberate selection rather than re-snatching everything.
+
 ### Procedure
 
 ```sh

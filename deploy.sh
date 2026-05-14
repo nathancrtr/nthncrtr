@@ -183,6 +183,8 @@ deploy_qbittorrent() {
   local CHANGED=0
   install_file "$REPO_ROOT/services/qbittorrent/docker-compose.yml" /srv/qbittorrent/docker-compose.yml
   install_file "$REPO_ROOT/services/qbittorrent/port-updater.sh"    /srv/qbittorrent/port-updater.sh 0755
+  install_file "$REPO_ROOT/services/qbittorrent/orpheus-restore.py"  /srv/qbittorrent/orpheus-restore.py 0755
+  install_file "$REPO_ROOT/services/qbittorrent/qbit-bulk-add.sh"    /srv/qbittorrent/qbit-bulk-add.sh 0755
   (( DRY_RUN )) && return 0
   # qBit config lives at /srv/qbittorrent/config; downloads land under /mnt/media
   # (mounted directly so Radarr/Sonarr can hardlink final files instead of copying).

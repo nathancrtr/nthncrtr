@@ -63,6 +63,42 @@ A common failure mode: `WARN: failed to push port` — usually means qBit's loca
 
 Ports: `8080` (WebUI, published on the gluetun container). The torrent peer port is whatever Proton's port-forward assigns; it is reachable via the VPN's external IP, not via natto's IP, so no host-side publish is needed.
 
+## Disaster recovery: rebuilding from scratch via Orpheus
+
+If `/srv/qbittorrent/config/qBittorrent/BT_backup/` is gone (fresh install, lost drive, beets-stomped-your-music-and-now-nothing-seeds), the operator's Orpheus account is the source of truth for "which torrents was I supposed to have." Two scripts in this directory rebuild from there:
+
+1. **`orpheus-restore.py`** — Python 3, stdlib only. Reads `ORPHEUS_API_KEY` from `/srv/qbittorrent/secrets.env` (or `--secrets` / env var), enumerates the operator's `snatched` and/or `uploaded` torrents via Orpheus's Gazelle API, and downloads each `.torrent` file as `<torrentId>.torrent`. Idempotent: re-running skips files already on disk. Honors Orpheus's ~5-req/10s rate limit with a 2.5s sleep between calls.
+
+2. **`qbit-bulk-add.sh`** — bash. Takes the directory of .torrent files produced above and POSTs each to qBit's WebUI API. Runs as a one-shot `curlimages/curl` container inside gluetun's netns, so qBit's localhost auth-bypass applies — no password needed and nothing crosses the docker bridge. qBit dedupes by infohash, so this is safe to re-run.
+
+### Procedure
+
+```sh
+ssh natto
+
+# 1. One-time: add ORPHEUS_API_KEY to secrets.env. Get a token from
+#    Orpheus → User → Settings → Access Settings → Create API key (User scope).
+sudoedit /srv/qbittorrent/secrets.env
+
+# 2. Pull fresh .torrent files. snatched is the canonical "everything I've ever
+#    downloaded"; uploaded picks up the few torrents this account originated.
+cd /srv/qbittorrent
+sudo ./orpheus-restore.py --out ./restore --type snatched
+sudo ./orpheus-restore.py --out ./restore --type uploaded
+
+# 3. Prove the qBit add flow on ONE torrent before committing to bandwidth.
+sudo ./qbit-bulk-add.sh --dir ./restore --limit 1
+#    Watch torrent.nthncrtr.com — it should appear, start downloading,
+#    and once complete switch to seeding state.
+
+# 4. Once happy, fan out.
+sudo ./qbit-bulk-add.sh --dir ./restore
+```
+
+`--dry-run` on `orpheus-restore.py` builds the manifest without fetching any .torrent files, useful for sanity-checking what's about to happen. `--paused` on `qbit-bulk-add.sh` adds torrents in a paused state if you want to inspect first.
+
+The expected steady-state result: each torrent's content downloads (from the swarm + tracker), then qBit transitions to seeding, and the tracker's "snatched/seeding" lists for the user reflect reality again. Once `BT_backup/` is repopulated this way, daily `backup.sh` runs will capture it (via `/srv/` in the SOURCES list) so this whole procedure becomes a one-time fix.
+
 ## Homepage widget
 
 The qBittorrent widget in `services/homepage/config/services.yaml` is active. It uses the WebUI at `http://natto:8080`, which still works since 8080 is published on gluetun. Add `HOMEPAGE_VAR_QBITTORRENT_PASSWORD=<password>` to `/srv/homepage/secrets.env` (mode 0600) and run `sudo ./deploy.sh homepage` to pick up the secret.

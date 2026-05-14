@@ -17,7 +17,8 @@
 #   --dir DIR        directory of .torrent files (default: ./torrents)
 #   --savepath PATH  qBit save path (default: /mnt/media/music)
 #   --category CAT   qBit category (default: music)
-#   --paused         start torrents in paused state
+#   --paused         add torrents in stopped state (qBit 5.x param is "stopped";
+#                    flag name kept as --paused for muscle memory)
 #   --limit N        only add the first N files (default: 0 = all)
 
 set -euo pipefail
@@ -83,6 +84,7 @@ docker run --rm \
         -F "torrents=@$f" \
         -F "savepath=$SAVE" \
         -F "category=$CATEGORY" \
+        -F "stopped=$PAUSED" \
         -F "paused=$PAUSED" \
         -F "skip_checking=false" 2>&1) || body="000"
       if [ "$body" = "200" ]; then

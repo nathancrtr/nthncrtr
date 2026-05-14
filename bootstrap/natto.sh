@@ -262,6 +262,8 @@ step_srv() {
   install -d -o "$(getent passwd 1000 | cut -d: -f1)" \
               -g "$(getent group  1000 | cut -d: -f1)" -m 0755 /srv/sonarr
   install -d -o "$(getent passwd 1000 | cut -d: -f1)" \
+              -g "$(getent group  1000 | cut -d: -f1)" -m 0755 /srv/prowlarr
+  install -d -o "$(getent passwd 1000 | cut -d: -f1)" \
               -g "$(getent group  1000 | cut -d: -f1)" -m 0755 /srv/qbittorrent
 
   # Copy compose files (root-owned, world-readable so the docker group user
@@ -276,6 +278,8 @@ step_srv() {
     "$REPO_ROOT/services/radarr/docker-compose.yml"    /srv/radarr/docker-compose.yml
   install -o root -g root -m 0644 \
     "$REPO_ROOT/services/sonarr/docker-compose.yml"    /srv/sonarr/docker-compose.yml
+  install -o root -g root -m 0644 \
+    "$REPO_ROOT/services/prowlarr/docker-compose.yml"  /srv/prowlarr/docker-compose.yml
   install -o root -g root -m 0644 \
     "$REPO_ROOT/services/qbittorrent/docker-compose.yml" /srv/qbittorrent/docker-compose.yml
 }

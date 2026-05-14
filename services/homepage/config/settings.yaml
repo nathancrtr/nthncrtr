@@ -3,11 +3,24 @@
 # https://gethomepage.dev/configs/settings/
 
 title: Home
+theme: dark
 color: slate
 headerStyle: clean
-cardBlur: md
+cardBlur: xl
 useEqualHeights: true
 hideVersion: true
+# Render docker container CPU% + mem inline under each service card.
+# Requires server: my-docker, container: <name> on the service entry.
+showStats: true
+
+# Background image — uncomment once you've dropped a JPG into config/images/
+# and rebuilt the container. Until then the custom.css gradient stands in.
+# background:
+#   image: /images/workshop.jpg
+#   blur: sm
+#   saturate: 60
+#   brightness: 35
+#   opacity: 90
 
 # Per-group layout. `style: row` flows services/bookmarks horizontally with
 # the group title to the left, instead of the default vertical-grid look.

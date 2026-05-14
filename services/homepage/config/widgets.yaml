@@ -3,9 +3,15 @@
 # https://gethomepage.dev/configs/info-widgets/
 
 - resources:
+    label: System
     cpu: true
     memory: true
     disk: /
+
+- resources:
+    label: Media
+    # Mounted ro into the homepage container — see docker-compose.yml.
+    disk: /mnt/media
 
 - search:
     provider: duckduckgo

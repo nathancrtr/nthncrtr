@@ -1,11 +1,96 @@
 /* Auto-loaded by Homepage from config/custom.css.
- * Override the default Manrope with Inter for a slightly more refined feel.
- * The Google Fonts CDN is fetched on each page load — if that bothers you,
- * self-host by dropping the .woff2 into config/ and adjusting the @font-face. */
+ *
+ * Aesthetic: "workshop glass + terminal warmth."
+ *  - Glass cards (relies on cardBlur: xl in settings.yaml)
+ *  - Inter for prose, JetBrains Mono for stats and chips so digits don't jitter
+ *  - Single warm accent (amber) for hover/active states
+ *  - Background gradient acts as a placeholder until a real photo lands in
+ *    config/images/ and the `background:` block in settings.yaml is enabled.
+ *
+ * Selectors are intentionally broad — Homepage's classnames change between
+ * releases, so we lean on attribute/substring matches rather than chasing
+ * specific class hashes. Expect to tweak after seeing it rendered. */
 
-@import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap');
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap');
+
+:root {
+  --hp-accent: #d97706;                       /* amber-600 */
+  --hp-accent-soft: rgba(217, 119, 6, 0.18);
+  --hp-card-bg: rgba(18, 20, 24, 0.42);
+  --hp-card-border: rgba(255, 255, 255, 0.06);
+}
 
 html,
 body {
   font-family: 'Inter', system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+}
+
+/* Warm wash behind everything. Replaced visually by the photo background once
+ * settings.yaml -> background.image is enabled; the gradient still shows
+ * through the photo's blur, which is the point. */
+body::before {
+  content: '';
+  position: fixed;
+  inset: 0;
+  z-index: -1;
+  background:
+    radial-gradient(ellipse at 18% 0%, rgba(217, 119, 6, 0.10), transparent 55%),
+    radial-gradient(ellipse at 82% 100%, rgba(99, 102, 241, 0.06), transparent 55%),
+    #0b0d10;
+}
+
+/* Group titles — small caps, looser tracking, slightly faded. Reads as a
+ * section header rather than a UI label. */
+#information-widgets ~ div h2,
+.services-group h2,
+.bookmarks-group h2 {
+  font-variant-caps: all-small-caps;
+  letter-spacing: 0.10em;
+  font-weight: 500;
+  opacity: 0.75;
+}
+
+/* Glass surfaces. Background + saturate so the eventual photo bleeds warmth
+ * through without washing out the text. */
+.service-card,
+.bookmark-card,
+[class*="information-widget"] {
+  background: var(--hp-card-bg) !important;
+  backdrop-filter: blur(14px) saturate(125%);
+  -webkit-backdrop-filter: blur(14px) saturate(125%);
+  border: 1px solid var(--hp-card-border);
+  transition: box-shadow 140ms ease-out, border-color 140ms ease-out;
+}
+
+.service-card:hover,
+.bookmark-card:hover {
+  border-color: var(--hp-accent-soft);
+  box-shadow: inset 0 0 0 1px var(--hp-accent-soft),
+              0 4px 24px -8px rgba(217, 119, 6, 0.20);
+}
+
+/* Mono for anything numeric-heavy: docker stats, resource widget readouts,
+ * widget data fields. tnum keeps digit columns aligned. */
+.docker-status,
+.service-stats,
+.service-container-stats,
+[class*="resources"] [class*="font-medium"],
+[class*="resources"] [class*="text-"],
+[data-component="widget-resource-value"],
+[data-component="resource"] span {
+  font-family: 'JetBrains Mono', ui-monospace, 'SF Mono', Menlo, monospace;
+  font-feature-settings: 'tnum';
+  letter-spacing: -0.01em;
+}
+
+/* Container status pill — softer pulse, warm tint when running. */
+.docker-status[data-status="running"] {
+  color: var(--hp-accent);
+}
+
+/* Bookmark abbreviations — make the two-letter monogram feel intentional. */
+.bookmark-card [class*="text-"][class*="font-medium"]:first-child {
+  font-family: 'JetBrains Mono', ui-monospace, monospace;
+  font-weight: 500;
+  letter-spacing: 0.02em;
 }

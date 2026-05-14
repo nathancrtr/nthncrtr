@@ -22,8 +22,8 @@ The dashboard at `home.nthncrtr.com`. Shows live container status (via the Docke
 | `docker.yaml` | Defines `my-docker:` pointing at `/var/run/docker.sock` (mounted ro) |
 | `bookmarks.yaml` | Tailscale admin, Cloudflare, code repos |
 | `settings.yaml` | Title, color, header style, background image, per-group layout, weather provider stubs |
-| `widgets.yaml` | Top-bar widgets (CPU, memory, disk, search) |
-| `custom.css` | Auto-loaded by Homepage; currently swaps the default font for Inter |
+| `widgets.yaml` | Top-bar widgets — System block (CPU/mem/`/`) and Media block (`/mnt/media`), plus search |
+| `custom.css` | Auto-loaded by Homepage. "Workshop glass + terminal warmth": Inter prose, JetBrains Mono stats, amber accent, glass cards |
 
 ## Secrets
 

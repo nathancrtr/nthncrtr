@@ -9,6 +9,8 @@ services:
     volumes:
       - ./config:/app/config
       - /var/run/docker.sock:/var/run/docker.sock:ro
+      # Read-only so the resources widget can statvfs the 5TB media drive.
+      - /mnt/media:/mnt/media:ro
     environment:
       - HOMEPAGE_ALLOWED_HOSTS=home.nthncrtr.com
     env_file:

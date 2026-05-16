@@ -3,11 +3,15 @@
 	acme_dns cloudflare {env.CF_API_TOKEN}
 }
 
-# Colocated services are proxied via 127.0.0.1 (their compose files publish on
-# 0.0.0.0:<port>). Do NOT use the host's own tailnet name here: a tailnet
-# identity change (e.g. the 2026-05 Pi->Beelink migration, which joined as
-# `natto-1`) silently 502s every such upstream. Only genuinely remote
-# upstreams (starmaya -> kvass) use a tailnet name.
+# Proxy upstreams are addressed by IP, never by a tailnet (MagicDNS) name:
+#  - Colocated services use 127.0.0.1 (their compose files publish on
+#    0.0.0.0:<port>). A host-tailnet-name self-reference silently 502s on any
+#    tailnet identity change (the 2026-05 Pi->Beelink migration joined as
+#    `natto-1`).
+#  - The one remote upstream (starmaya -> kvass) uses kvass's stable Tailscale
+#    IP, NOT kvass.tailaf7ea6.ts.net: this host runs Pi-hole on :53, so
+#    systemd-resolved's stub is disabled and MagicDNS does not resolve here.
+#    Tailnet *connectivity* to that IP is fine (tailscale ping kvass: ~8ms).
 
 # Dashboard
 home.nthncrtr.com {
@@ -44,9 +48,10 @@ prowlarr.nthncrtr.com {
 	reverse_proxy 127.0.0.1:9696
 }
 
-# Coffee roasting app — roaster-web on kvass:8080.
+# Coffee roasting app — roaster-web on kvass:8080 (kvass = 100.65.46.92,
+# stable per-node Tailscale IP; see the header note on why not the name).
 starmaya.nthncrtr.com {
-	reverse_proxy kvass.tailaf7ea6.ts.net:8080
+	reverse_proxy 100.65.46.92:8080
 }
 
 :443 {

@@ -22,7 +22,7 @@
         container: navidrome-navidrome-1
         widget:
           type: navidrome
-          url: http://natto.tailaf7ea6.ts.net:4533
+          url: http://host.docker.internal:4533
           user: nthncrtr
           token: '{{HOMEPAGE_VAR_NAVIDROME_TOKEN}}'
           salt: '{{HOMEPAGE_VAR_NAVIDROME_SALT}}'
@@ -69,29 +69,32 @@
           key: '{{HOMEPAGE_VAR_PROWLARR_KEY}}'
 
     - Nextcloud:
-        # Tailscale-only (no Caddy route) — href + widget url use the
-        # tailnet name, same pattern as Navidrome. natto.tailaf7ea6.ts.net
-        # is already in the container's NEXTCLOUD_TRUSTED_DOMAINS, so the
-        # serverinfo widget's Host header passes the trusted-domain check.
+        # Tailscale-only (no Caddy route). href = tailnet URL (resolves in
+        # the user's browser on the tailnet); widget url = host.docker.internal
+        # because the homepage container's resolver can't see MagicDNS names
+        # (same reason the Caddyfile pins IPs). `host.docker.internal` is in
+        # NEXTCLOUD_TRUSTED_DOMAINS so the serverinfo Host header passes.
         href: http://natto.tailaf7ea6.ts.net:8081
         icon: nextcloud.png
         server: my-docker
         container: nextcloud
         widget:
           type: nextcloud
-          url: http://natto.tailaf7ea6.ts.net:8081
+          url: http://host.docker.internal:8081
           username: nthncrtr
           password: '{{HOMEPAGE_VAR_NEXTCLOUD_PASSWORD}}'
 
     - Jellyfin:
-        # Tailscale-only (no Caddy route) — tailnet name like Navidrome.
+        # Tailscale-only (no Caddy route). href = tailnet URL (browser-side);
+        # widget url = host.docker.internal (homepage container can't resolve
+        # MagicDNS names — see the Nextcloud note above).
         href: http://natto.tailaf7ea6.ts.net:8096
         icon: jellyfin.png
         server: my-docker
         container: jellyfin
         widget:
           type: jellyfin
-          url: http://natto.tailaf7ea6.ts.net:8096
+          url: http://host.docker.internal:8096
           key: '{{HOMEPAGE_VAR_JELLYFIN_KEY}}'
           enableBlocks: true
 

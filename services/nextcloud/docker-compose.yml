@@ -75,10 +75,14 @@ services:
       - MYSQL_HOST=nextcloud-db
       - REDIS_HOST=nextcloud-redis
       - NEXTCLOUD_DATA_DIR=/var/www/html/data
-      # Tailnet + LAN hostnames Nextcloud will answer to. Add more later with
-      # `occ config:system:set trusted_domains N --value=...` if the tailnet
-      # name changes (it can after a host migration — see migrate-natto.md).
-      - NEXTCLOUD_TRUSTED_DOMAINS=localhost natto natto.tailaf7ea6.ts.net
+      # Tailnet + LAN hostnames Nextcloud will answer to. `host.docker.internal`
+      # is here so the Homepage container's serverinfo widget can reach this
+      # over the docker bridge (the homepage container can't resolve MagicDNS
+      # names — same reason the Caddyfile pins IPs). NOTE: this env var is read
+      # only at first install; on a running instance add domains with
+      # `occ config:system:set trusted_domains N --value=...` (see
+      # services/homepage/README.md and migrate-natto.md).
+      - NEXTCLOUD_TRUSTED_DOMAINS=localhost natto natto.tailaf7ea6.ts.net host.docker.internal
       - OVERWRITECLIURL=http://natto.tailaf7ea6.ts.net:8081
       - PHP_MEMORY_LIMIT=512M
       - PHP_UPLOAD_LIMIT=16G

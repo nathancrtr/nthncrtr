@@ -385,19 +385,32 @@ Right now Navidrome serves from `/mnt/media/music`. If Jellyfin is on the table,
 **Rollback:**
 - See `runbooks/media-layout.md` § Rollback for the reverse-direction script. All moves stayed within the exfat fs so they're truly reversible without re-copying.
 
-### 4.4 Host-wide MagicDNS vs Pi-hole-owns-:53  [OPEN — surfaced 2026-05-16 migration]
+### 4.4 Host-wide MagicDNS vs Pi-hole-owns-:53  [DONE 2026-05-16 — nsswitch `resolve`]
 
-On the Beelink, Pi-hole binds `0.0.0.0:53`, so systemd-resolved's stub
-listener is disabled — and that stub is the path Tailscale MagicDNS rides.
-Result: `*.tailaf7ea6.ts.net` does not resolve **on natto itself** (tailnet
-*connectivity* is fine). Worked around by IP-addressing every Caddy upstream
-(`5cffc0a`); CLAUDE.md's "Reaching kvass" updated to use the IP.
+Pi-hole binds `0.0.0.0:53`, so systemd-resolved's stub listener is disabled.
+Diagnosis showed resolved itself was **already correct**: it had the
+Tailscale split-DNS route (`tailscale0` → `100.100.100.100` for
+`tailaf7ea6.ts.net`) *and* the public path (`enp1s0` → upstreams), and
+`resolvectl query kvass.tailaf7ea6.ts.net` worked. The only break was
+`/etc/nsswitch.conf` = `hosts: files dns` — no `resolve` entry, so glibc
+bypassed resolved entirely.
 
-**Decide a deliberate fix** (not a cutover improvisation), e.g.: a Pi-hole
-conditional forwarder for `tailaf7ea6.ts.net` → `100.100.100.100` and point
-the host resolver at Pi-hole; or a dedicated dnsmasq/`systemd-resolved`
-split-DNS that coexists with Pi-hole on `:53`. Until then, use Tailscale IPs
-from natto and don't rely on tailnet names in host-side config.
+**Fix applied:** `hosts: files resolve [!UNAVAIL=return] dns` (+ ensure
+`libnss-resolve` installed). Host-only change; Pi-hole/`:53`/household
+untouched; no host→container dependency. Rejected alternatives: resolv.conf
+→ `100.100.100.100` (Tailscale resolver returns nothing for public names in
+this tailnet — would break public DNS); Pi-hole conditional-forward (needs
+the host repointed at the Pi-hole container — fragile, no gain).
+
+**Verified:** `getent hosts kvass.tailaf7ea6.ts.net` + public both resolve;
+`dig @192.168.1.50 example.com` still answers; `*.nthncrtr.com` smoke set
+unchanged. Caddyfile keeps the pinned kvass IP **on purpose** — Go's pure
+resolver bypasses nsswitch/resolved (reads resolv.conf directly).
+
+**Open sub-item (lower priority):** fold the host-DNS prep (resolved-stub
+drop-in + nsswitch `resolve`) into `bootstrap/natto.sh` so a future
+Ubuntu/systemd-resolved cold-start doesn't re-hit migration Gaps 4 & 6
+manually. The runbook documents the manual steps in the meantime.
 
 **Success criteria:**
 - `getent hosts kvass.tailaf7ea6.ts.net` resolves on natto.

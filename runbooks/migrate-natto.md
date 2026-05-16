@@ -400,12 +400,17 @@ authoritative where it conflicts with the step text above.
    the `127.0.0.1` ones (home, pi-hole) were fine. Fixed `e13723b` — local
    services use `127.0.0.1`.
 6. **The §4 (gap 4) Pi-hole fix breaks host MagicDNS.** With the resolved
-   stub disabled, `*.tailaf7ea6.ts.net` no longer resolves on the host, so
+   stub disabled, `*.tailaf7ea6.ts.net` no longer resolved on the host, so
    `starmaya → kvass.tailaf7ea6.ts.net` 502'd (tailnet *connectivity* to
    kvass was fine: `tailscale ping kvass` ~8ms). Fixed `5cffc0a` — pin
-   kvass's stable Tailscale IP. Broader host-MagicDNS-vs-Pi-hole-:53
-   coexistence is an open follow-up; CLAUDE.md's "Reaching kvass" guidance
-   (`curl kvass.tailaf7ea6.ts.net` from natto) no longer works on the host.
+   kvass's stable Tailscale IP (kept permanently: Go's pure resolver
+   bypasses nsswitch anyway). **Host-wide name resolution then fully
+   restored** (WORKLIST 4.4): resolved already had the Tailscale split-DNS
+   route; the only break was `/etc/nsswitch.conf` lacking `resolve`. Fix:
+   set `hosts: files resolve [!UNAVAIL=return] dns` and ensure
+   `libnss-resolve` is installed. Do this right after gap 4's resolved-stub
+   change (same root cause). `getent hosts kvass.tailaf7ea6.ts.net` then
+   resolves; Pi-hole/`:53`/household unaffected (host-only change).
 7. **§5a service-stop list is incomplete.** `homepage` bind-mounts
    `/mnt/media` (a docker bind mount pins the fs → `umount` "target is
    busy"); and Samba (`smbd`) exported `/mnt/media`. Both must be stopped

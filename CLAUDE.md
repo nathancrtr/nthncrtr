@@ -141,7 +141,7 @@ Caddy's secret (`CF_API_TOKEN`) lives at `/etc/caddy/caddy.env` (mode 0600, owne
 
 ### Reaching kvass
 
-kvass is on natto's tailnet as `kvass.tailaf7ea6.ts.net` (IP `100.65.46.92`). From workhorse, `ssh kvass` works over the LAN. **From natto, MagicDNS does NOT resolve** (since the 2026-05-16 migration: natto runs Pi-hole on `:53`, so systemd-resolved's stub — the path Tailscale MagicDNS rides — is disabled). Use the **Tailscale IP**, not the name: `curl http://100.65.46.92:8080` is the roaster-web endpoint that backs `starmaya.nthncrtr.com` (this is why the Caddyfile pins that IP). Tailnet *connectivity* is fine — `tailscale ping kvass` works. Restoring host-wide MagicDNS without breaking Pi-hole is an open follow-up.
+kvass is on natto's tailnet as `kvass.tailaf7ea6.ts.net` (IP `100.65.46.92`). From workhorse, `ssh kvass` works over the LAN. **From natto, tailnet names resolve** — `curl http://kvass.tailaf7ea6.ts.net:8080` is the roaster-web endpoint behind `starmaya.nthncrtr.com`. The mechanism is non-obvious: natto runs Pi-hole on `:53`, so systemd-resolved's stub listener is disabled — but resolved itself still has the Tailscale split-DNS route (`tailscale0` → `100.100.100.100` for `tailaf7ea6.ts.net`), and `/etc/nsswitch.conf` carries `resolve [!UNAVAIL=return]` so glibc lookups go through resolved (fixed 2026-05-16; runbook Gaps item 6). So: `getent`/`curl`/`apt` resolve tailnet names, but Go's *pure* resolver (Caddy) reads `/etc/resolv.conf` directly and bypasses this — which is why the Caddyfile still pins kvass's IP defensively (don't "fix" it back to the name). `tailscale ping kvass` works regardless (no DNS).
 
 ### When debugging weird state, check disk space first
 

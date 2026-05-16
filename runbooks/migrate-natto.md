@@ -121,7 +121,7 @@ sudo install -o caddy -g caddy -m 0600 /dev/stdin /etc/caddy/caddy.env <<< 'CF_A
 
 This is where the bulk of state arrives on the new host. Two sub-steps:
 
-**5a. Move the 5TB drive.** On old natto, stop services that hold open files on `/mnt/media`. **This list is incomplete — see Gaps §7/§8:** `homepage` also bind-mounts `/mnt/media` (pins the fs), and Samba (`smbd`) exported it; both must stop too, or `umount` fails "target is busy". Confirm with `sudo fuser -vm /mnt/media` before unmounting.
+**5a. Move the 5TB drive.** On old natto, stop services that hold open files on `/mnt/media`. **This list is easy to under-count — see Gap §7:** `homepage` also bind-mounts `/mnt/media` (pins the fs) even though it isn't an obvious media service; it must stop too, or `umount` fails "target is busy". Always confirm with `sudo fuser -vm /mnt/media` before unmounting rather than trusting the list below.
 
 ```sh
 ssh natto
@@ -131,7 +131,6 @@ cd /srv/homepage    && sudo docker compose down   # bind-mounts /mnt/media
 cd /srv/radarr      && sudo docker compose down
 cd /srv/sonarr      && sudo docker compose down
 cd /srv/prowlarr    && sudo docker compose down 2>/dev/null || true
-sudo systemctl stop smbd nmbd 2>/dev/null || true  # if Samba present (now decommissioned)
 sudo fuser -vm /mnt/media || true                  # nothing held = good
 sudo umount /mnt/media
 ls /mnt/media   # should be empty
@@ -213,7 +212,7 @@ Caddy needs a working internet connection to renew certs (DNS-01 via Cloudflare)
 > **This step covers ONLY the external `*.nthncrtr.com` path. It does NOT
 > restore household DNS.** Old natto also served the *household* on a static
 > secondary LAN IP `192.168.1.50` (the DNS server GFiber DHCP hands clients).
-> That endpoint must be moved to the new host separately — see Gaps §9. Add
+> That endpoint must be moved to the new host separately — see Gaps §8. Add
 > it before/at the §9 power-off: `sudo ip addr add 192.168.1.50/24 dev
 > enp1s0` (instant), then persist it as a second `addresses:` entry in
 > netplan. Verify with `dig @192.168.1.50 example.com` from a LAN host.
@@ -346,7 +345,7 @@ sudo rsync -aHAX --delete --info=progress2 \
   nthncrtr@old-natto.tailaf7ea6.ts.net:/srv/ /srv/
 ```
 
-`/mnt/media` would need an equivalent rsync — but that's ~2.5TB of media over the LAN and likely not worth it. If the drive can't move, the realistic plan is "keep `/mnt/media` mounted on old natto, re-export it to new natto over NFS or SMB, and accept the latency hit." That's out of scope for this runbook.
+`/mnt/media` would need an equivalent rsync — but that's ~2.5TB of media over the LAN and likely not worth it. If the drive can't move, the realistic plan is "keep `/mnt/media` mounted on old natto, re-export it to new natto over NFS, and accept the latency hit." That's out of scope for this runbook.
 
 ## Rollback
 
@@ -411,16 +410,14 @@ authoritative where it conflicts with the step text above.
    `libnss-resolve` is installed. Do this right after gap 4's resolved-stub
    change (same root cause). `getent hosts kvass.tailaf7ea6.ts.net` then
    resolves; Pi-hole/`:53`/household unaffected (host-only change).
-7. **§5a service-stop list is incomplete.** `homepage` bind-mounts
+7. **§5a service-stop list is easy to under-count.** `homepage` bind-mounts
    `/mnt/media` (a docker bind mount pins the fs → `umount` "target is
-   busy"); and Samba (`smbd`) exported `/mnt/media`. Both must be stopped
-   before `umount /mnt/media`, in addition to the services the runbook
-   lists. (Pi-hole does **not** touch `/mnt/media` — leave it up.)
-8. **Samba was an unmanaged service.** `\\natto\Music` (read-only share of
-   `/mnt/media`, smbd active+enabled) existed on old natto but was absent
-   from the repo/bootstrap/runbook. Decision (operator, 2026-05-16):
-   **deliberately dropped** — not reproduced on the Beelink.
-9. **Household LAN DNS endpoint (`192.168.1.50`) was entirely missing from
+   busy") even though it isn't an obvious media service, so it must be
+   stopped before `umount /mnt/media` in addition to the services the
+   runbook lists. Don't trust the list — `sudo fuser -vm /mnt/media` is the
+   authority on what still holds the fs. (Pi-hole does **not** touch
+   `/mnt/media` — leave it up.)
+8. **Household LAN DNS endpoint (`192.168.1.50`) was entirely missing from
    the runbook.** Old natto served household DNS on a static *secondary* IP
    `192.168.1.50` (the GFiber-DHCP-handed DNS server; primary `.228` was
    dynamic). §7/§9 only covered the Cloudflare/tailnet path. On power-off

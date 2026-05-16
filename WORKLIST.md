@@ -506,7 +506,7 @@ after 5.4, following the runbook.
 **Rollback:** Documentation only — `git revert`. The runbook's own rollback
 section covers a botched copy (additive; Google untouched until verified).
 
-### 5.4 Cutover activation  [PENDING — gate LIFTED 2026-05-16 (migration done); deferred at operator's choice]
+### 5.4 Cutover activation  [SUPERSEDED by 6.1 — narrowed to deploy+verify; Drive pull split out]
 
 > The Pi→Beelink migration completed 2026-05-16, so this is no longer
 > *gated* — just not yet done (operator chose to defer Nextcloud during the
@@ -539,3 +539,83 @@ section covers a botched copy (additive; Google untouched until verified).
 - Nextcloud is independent of every other service — `cd /srv/nextcloud &&
   docker compose down` removes it with zero impact on DNS/Caddy/the rest.
   Re-run when ready.
+
+---
+
+## Phase 6 — Post-migration services on the more capable hardware
+
+The Pi → Beelink migration (Phase 5.4 gate lifted 2026-05-16) unlocked
+services the Pi couldn't host well. Operator decisions captured for this
+phase: Jellyfin + Nextcloud are **Tailscale-only / LAN** (no Caddy route, no
+Cloudflare DNS — local streaming + personal data only); Jellyfin uses the
+Beelink's Intel QuickSync via `/dev/dri`; SMB/Samba is dropped as an
+unsupported feature (docs cleaned, not just unimplemented).
+
+### 6.1 Nextcloud activation  [supersedes 5.4 — deploy + verify only]
+
+Scope deliberately narrowed with the operator: bring the stack up and
+verify it. The one-time Google Drive pull (`runbooks/migrate-off-gdrive.md`)
+remains a separate operator action, not part of this mission.
+
+**Preconditions:**
+- Missions 5.1–5.3 committed (scaffolding, backup, runbook — all DONE).
+- `/srv/nextcloud/secrets.env` provisioned on natto (mode 0600, root:root).
+
+**Success criteria:**
+- `deploy.sh nextcloud` starts all four containers; `127.0.0.1:8081/status.php`
+  → 200 and `occ status` → `installed: true`.
+- Reachable on the tailnet at `http://natto.tailaf7ea6.ts.net:8081`; admin
+  login works; no Administration → Overview blocking warnings.
+- No Caddyfile/Cloudflare change (Tailscale-only by design).
+
+**Outcome:** (filled in at deploy.)
+
+**Rollback:** `cd /srv/nextcloud && docker compose down` — independent of
+every other service, zero DNS/Caddy impact.
+
+### 6.2 Jellyfin standup  [NEW]
+
+**Preconditions:**
+- `/mnt/media/video/{movies,tv}` populated on natto (verified — already is).
+- `/dev/dri/renderD128` present on natto (verified — Intel QuickSync).
+- Repo `git status` clean before the deploy.
+
+**Success criteria:**
+- `services/jellyfin/` committed: `docker-compose.yml` (lscr.io/linuxserver
+  image, PUID/PGID 1000, `/mnt/media/video:/media/video:ro`, `/dev/dri`
+  passthrough with host `render`/`video` gids, `:8096` + `:7359/udp`) and
+  `README.md`. Tailscale-only — no Caddyfile/Cloudflare route.
+- `deploy.sh` gains `deploy_jellyfin` (dirs, compose up, verify
+  `127.0.0.1:8096/health`); `jellyfin` in the default service set + usage.
+- `bootstrap/natto.sh` `step_srv` creates `/srv/jellyfin` (1000:1000) +
+  installs the compose; banner lists the bring-up.
+- `deploy.sh jellyfin` brings the container up; `127.0.0.1:8096/health` → 200.
+- Reachable at `http://natto:8096` / `http://natto.tailaf7ea6.ts.net:8096`;
+  Movies + Shows libraries import from `/media/video/{movies,tv}`.
+- HW transcode: `/dev/dri/renderD128` visible in-container; QSV selectable
+  under Dashboard → Playback.
+
+**Outcome:** (filled in at deploy.)
+
+**Rollback:** `cd /srv/jellyfin && docker compose down`; revert the repo
+commit. Config/cache under `/srv/jellyfin` is disposable; media untouched
+(read-only mount).
+
+### 6.3 Drop SMB/Samba as an unsupported feature  [DONE]
+
+**Preconditions:** none (Samba already absent on the Beelink — never
+reproduced at the migration).
+
+**Success criteria:**
+- `runbooks/migrate-natto.md`: smbd-stop step removed from §5a; the Samba
+  clause removed from Gap §7; the standalone Samba Gap §8 deleted (items
+  renumbered, cross-refs fixed); the NFS/SMB fallback line reworded to NFS.
+  The generic "`fuser -vm` is the authority before `umount`" lesson kept.
+- `CLAUDE.md`: the "Samba decommissioned" line replaced with an explicit
+  "SMB/Samba is not a supported feature" statement.
+
+**Outcome:** Committed. Documentation-only — there was no Samba config in
+the repo to remove; the change makes the *unsupported* status explicit
+rather than reading as a transient migration casualty.
+
+**Rollback:** `git revert` — docs only, no running service affected.

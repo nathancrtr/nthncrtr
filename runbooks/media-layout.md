@@ -58,16 +58,19 @@ rmdir /mnt/media/video
 cd /srv/navidrome && docker compose up -d
 ```
 
-## Future: Jellyfin
+## Jellyfin
 
-`/mnt/media/video/` is the eventual mount target. When Jellyfin lands:
+`/mnt/media/video/` is Jellyfin's library, mounted **read-only** (Jellyfin
+never writes back into the media tree; its metadata/DB live on the Beelink's
+internal disk at `/srv/jellyfin/config`). The mount line in
+`services/jellyfin/docker-compose.yml` is:
 
 ```yaml
-# services/jellyfin/docker-compose.yml (sketch)
-services:
-  jellyfin:
-    volumes:
-      - /mnt/media/video:/media/video:ro
+volumes:
+  - /mnt/media/video:/media/video:ro
 ```
 
-Subdirectories of `video/` (`movies/`, `tv/`, etc.) follow Jellyfin's preferred layout — defer that decision until first import.
+Subdirectory layout (settled at first import): `movies/` and `tv/`, mapped
+to Jellyfin libraries as `/media/video/movies` (Movies) and
+`/media/video/tv` (Shows). See `services/jellyfin/README.md` for the
+first-run library setup and the Intel QuickSync HW-transcode notes.

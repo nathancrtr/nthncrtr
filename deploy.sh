@@ -11,8 +11,8 @@
 # One-time bootstrap (not handled here): git clone this repo to
 # /srv/nthncrtr-repo and put a read-only deploy key at /root/.ssh/.
 #
-# Services: caddy navidrome homepage backup qbittorrent radarr sonarr prowlarr nextcloud pihole starmaya
-# Default (no service args): caddy navidrome homepage backup qbittorrent radarr sonarr prowlarr nextcloud
+# Services: caddy navidrome homepage backup qbittorrent radarr sonarr prowlarr nextcloud jellyfin pihole starmaya
+# Default (no service args): caddy navidrome homepage backup qbittorrent radarr sonarr prowlarr nextcloud jellyfin
 #   — pihole is gated behind --yes-pihole (DNS outage for ~30s).
 #   — starmaya must be requested explicitly (deploys to kvass over ssh).
 #
@@ -31,8 +31,8 @@ usage() {
   cat <<'EOF'
 Usage: sudo ./deploy.sh [--dry-run] [--yes-pihole] [services...]
 
-Services: caddy navidrome homepage backup qbittorrent radarr sonarr prowlarr nextcloud pihole starmaya
-Default (no service args): caddy navidrome homepage backup qbittorrent radarr sonarr prowlarr nextcloud
+Services: caddy navidrome homepage backup qbittorrent radarr sonarr prowlarr nextcloud jellyfin pihole starmaya
+Default (no service args): caddy navidrome homepage backup qbittorrent radarr sonarr prowlarr nextcloud jellyfin
 EOF
   exit "${1:-0}"
 }
@@ -50,7 +50,7 @@ done
 
 SERVICES=("$@")
 if [[ ${#SERVICES[@]} -eq 0 ]]; then
-  SERVICES=(caddy navidrome homepage backup qbittorrent radarr sonarr prowlarr nextcloud)
+  SERVICES=(caddy navidrome homepage backup qbittorrent radarr sonarr prowlarr nextcloud jellyfin)
   (( YES_PIHOLE )) && SERVICES+=(pihole)
 fi
 
@@ -286,6 +286,31 @@ deploy_nextcloud() {
   # Tailscale-only: no public URL. status.php answers 200 (with JSON) even
   # pre-install, so it's a fair liveness probe.
   verify_url http://127.0.0.1:8081/status.php 200 || true
+}
+
+deploy_jellyfin() {
+  log "jellyfin"
+  local CHANGED=0
+  (( DRY_RUN )) || {
+    # config/cache on internal ext4, owned by the UID-1000 user (the
+    # container runs as PUID/PGID 1000). The media tree is bind-mounted
+    # read-only from /mnt/media/video and is not created here.
+    # Tailscale-only — no Caddyfile route to deploy.
+    [[ -d /srv/jellyfin ]]        || { install -d -o nthncrtr -g nthncrtr -m 0755 /srv/jellyfin;        note "created /srv/jellyfin"; }
+    [[ -d /srv/jellyfin/config ]] || { install -d -o nthncrtr -g nthncrtr -m 0755 /srv/jellyfin/config; note "created /srv/jellyfin/config"; }
+    [[ -d /srv/jellyfin/cache ]]  || { install -d -o nthncrtr -g nthncrtr -m 0755 /srv/jellyfin/cache;  note "created /srv/jellyfin/cache"; }
+  }
+  install_file "$REPO_ROOT/services/jellyfin/docker-compose.yml" /srv/jellyfin/docker-compose.yml
+  (( DRY_RUN )) && return 0
+  # /dev/dri must exist for the HW-transcode passthrough; warn (don't fail)
+  # if it's absent — Jellyfin still runs software-only.
+  if [[ ! -e /dev/dri/renderD128 ]]; then
+    warn "/dev/dri/renderD128 not found — Jellyfin will start but HW transcode is unavailable"
+  fi
+  compose_up jellyfin
+  sleep 5
+  # Tailscale-only: no public URL. /health answers 200 "Healthy" once up.
+  verify_url http://127.0.0.1:8096/health 200 || true
 }
 
 deploy_pihole() {

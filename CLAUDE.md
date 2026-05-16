@@ -6,7 +6,7 @@ You are working in the version-controlled config + operational runbook for a sma
 
 | Host | Hostname | Role | OS / Arch | Services |
 |---|---|---|---|---|
-| **natto** | `natto` | Hub | Beelink Mini S12, x86_64, Ubuntu Server 26.04 LTS (migrated from Raspberry Pi/arm64/Debian on 2026-05-16 — see `runbooks/migrate-natto.md` Gaps §"2026-05-16") | Caddy (native, systemd), Pi-hole, Navidrome, Homepage, qBittorrent (behind Gluetun + Proton VPN), the *arrs — all docker-managed compose projects. Nextcloud scaffolding present but **not yet deployed** (deferred at cutover). Samba `\\natto\Music` was **decommissioned** at the migration (not reproduced). |
+| **natto** | `natto` | Hub | Beelink Mini S12, x86_64, Ubuntu Server 26.04 LTS (migrated from Raspberry Pi/arm64/Debian on 2026-05-16 — see `runbooks/migrate-natto.md` Gaps §"2026-05-16") | Caddy (native, systemd), Pi-hole, Navidrome, Homepage, qBittorrent (behind Gluetun + Proton VPN), the *arrs, Nextcloud + Jellyfin (both Tailscale-only) — all docker-managed compose projects. SMB/Samba is **not a supported feature** here (the old `\\natto\Music` share was dropped at the migration and is intentionally not reproduced). |
 | **starmaya** | `kvass` (machine), `starmaya` (canonical) | Workshop appliance | Raspberry Pi, arm64, Debian 13 | `roaster-daemon` + `roaster-web` (Node.js, native systemd). On natto's tailnet as `kvass.tailaf7ea6.ts.net`. |
 | **workhorse** | `workhorse` | Client + dev | Intel Mac | Tailscale only — hosts no services. This is where you typically run from. |
 
@@ -33,6 +33,7 @@ External access flow: `*.nthncrtr.com` → Cloudflare DNS (DNS-01 challenge toke
     ├── homepage/                # docker-compose.yml + config/ + secrets.env.example + .gitignore
     ├── qbittorrent/             # qBit + Gluetun (Proton VPN) sidecar
     ├── nextcloud/               # NC + MariaDB + Redis + cron (Tailscale-only) + secrets.env.example
+    ├── jellyfin/                # docker-compose.yml (Tailscale-only; /dev/dri HW transcode)
     ├── starmaya/                # systemd units + udev rule (deploys to kvass)
     └── backup/                  # backup.sh + nextcloud-data-sync.sh + their {service,timer}s
 ```
@@ -44,7 +45,7 @@ On natto, deployed config lives at `/srv/<svc>/` with the compose file co-locate
 - **starmaya vs kvass**: the docs and repo paths always use `starmaya`. The actual machine you SSH to right now is named `kvass`. Treat `starmaya` as the canonical service name and intended future hostname. ([memory](../../.claude/projects/-Users-nathancarter-repos-nthncrtr/memory/project_starmaya_kvass.md))
 - Container names on natto: `pihole`, `navidrome-navidrome-1` (compose v2 default with project=navidrome), `homepage`, `qbittorrent`, `gluetun` (Proton VPN sidecar for `qbittorrent`).
 - Service data on natto lives under `/srv/<svc>/`. `/home/nthncrtr/{navidrome,homepage,docker}/` are the **previous** locations and are now empty parents — the move to `/srv/` happened in mission 1.7.
-- The 5TB drive is at `/mnt/media` (exfat, uid=1000:gid=1000). Music in `/mnt/media/music`, backups in `/mnt/media/backups`, future video in `/mnt/media/video`, junk in `/mnt/media/_unsorted/`. Do NOT call it "/mnt/music" — that path doesn't exist.
+- The 5TB drive is at `/mnt/media` (exfat, uid=1000:gid=1000). Music in `/mnt/media/music` (Navidrome), video in `/mnt/media/video` (`movies/` + `tv/`, served read-only by Jellyfin), backups in `/mnt/media/backups`, junk in `/mnt/media/_unsorted/`. Do NOT call it "/mnt/music" — that path doesn't exist.
 
 ## Safety rules
 

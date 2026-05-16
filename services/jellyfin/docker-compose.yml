@@ -1,0 +1,57 @@
+# Jellyfin — local media server for the video library. Managed by deploy.sh
+# (sudo ./deploy.sh jellyfin).
+#
+# Reachability: Tailscale-only / LAN by design — same posture as Nextcloud.
+# There is deliberately NO Caddyfile route and NO Cloudflare DNS entry. It is
+# reached at:
+#   http://natto:8096                       (LAN)
+#   http://natto.tailaf7ea6.ts.net:8096     (tailnet)
+# 8096 is Jellyfin's default HTTP port and is free on natto (8080 = gluetun,
+# 8081 = nextcloud, 8053 = pihole admin).
+#
+# Data layout on natto (config/cache on the Beelink's internal ext4 — the
+# media itself stays on the exfat 5TB, mounted read-only):
+#   /srv/jellyfin/config  → server config + library DB + metadata
+#   /srv/jellyfin/cache   → transcode + image cache
+#   /mnt/media/video      → the library (movies/ + tv/), bind-mounted :ro
+# config/cache are NOT on the exfat 5TB: Jellyfin's SQLite library DB needs
+# POSIX locking/atomic renames exfat can't give (same reasoning as Nextcloud,
+# see services/nextcloud/README.md).
+#
+# Hardware transcoding: the Beelink S12's Intel iGPU is passed through via
+# /dev/dri (QuickSync). group_add carries natto's `render` (gid 991) and
+# `video` (gid 44) gids so the in-container user can open renderD128 — these
+# are HOST gids and must match `getent group render video` on natto. Enable
+# QSV under Dashboard → Playback after first start.
+#
+# Conventions match the *arrs (radarr/sonarr): lscr.io/linuxserver image,
+# PUID/PGID 1000 (owns /mnt/media), TZ. No mem_limit — natto is the Beelink
+# now (the Pi-era 512m caps on radarr/sonarr are stale), and transcoding is
+# memory-hungry by design.
+#
+# Ports:
+#   8096      — WebUI / API (matches the URLs above)
+#   7359/udp  — client auto-discovery on the LAN (optional but harmless)
+services:
+  jellyfin:
+    image: lscr.io/linuxserver/jellyfin:latest
+    container_name: jellyfin
+    environment:
+      - PUID=1000
+      - PGID=1000
+      - TZ=America/New_York
+      # So clients on the tailnet/LAN get a correct absolute base URL.
+      - JELLYFIN_PublishedServerUrl=http://natto.tailaf7ea6.ts.net:8096
+    volumes:
+      - ./config:/config
+      - ./cache:/cache
+      - /mnt/media/video:/media/video:ro
+    devices:
+      - /dev/dri:/dev/dri
+    group_add:
+      - "991"   # render (natto: getent group render)
+      - "44"    # video  (natto: getent group video)
+    ports:
+      - "8096:8096"
+      - "7359:7359/udp"
+    restart: unless-stopped

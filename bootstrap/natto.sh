@@ -269,6 +269,11 @@ step_srv() {
   # deploy.sh and their contents are owned by the in-container UIDs
   # (www-data, mysql) — encoding those host-side here would be wrong.
   install -d -o root -g root -m 0755 /srv/nextcloud
+  # Jellyfin: config/cache owned by the UID-1000 user (container runs as
+  # PUID/PGID 1000). The media tree stays on /mnt/media/video (bind-mounted
+  # read-only) and is not created here.
+  install -d -o "$(getent passwd 1000 | cut -d: -f1)" \
+              -g "$(getent group  1000 | cut -d: -f1)" -m 0755 /srv/jellyfin
 
   # Copy compose files (root-owned, world-readable so the docker group user
   # can `docker compose ...` against them).
@@ -288,6 +293,8 @@ step_srv() {
     "$REPO_ROOT/services/qbittorrent/docker-compose.yml" /srv/qbittorrent/docker-compose.yml
   install -o root -g root -m 0644 \
     "$REPO_ROOT/services/nextcloud/docker-compose.yml"   /srv/nextcloud/docker-compose.yml
+  install -o root -g root -m 0644 \
+    "$REPO_ROOT/services/jellyfin/docker-compose.yml"    /srv/jellyfin/docker-compose.yml
 }
 
 # ---------------------------------------------------------------------------
@@ -361,6 +368,7 @@ Next steps (operator):
        cd /srv/homepage    && docker compose up -d   # then curl https://home.nthncrtr.com
        cd /srv/qbittorrent && docker compose up -d   # then curl https://torrent.nthncrtr.com
        cd /srv/nextcloud   && docker compose up -d   # Tailscale-only; curl http://127.0.0.1:8081/status.php
+       cd /srv/jellyfin    && docker compose up -d   # Tailscale-only; curl http://127.0.0.1:8096/health
 
   6. Set up the CD pipeline (one-time, if /srv/nthncrtr-repo isn't already in place):
        a. Add the deploy-key pubkey (printed by step_deploy_key above) to the

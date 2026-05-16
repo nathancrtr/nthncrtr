@@ -13,6 +13,16 @@
 #   #   Indexers → Add Indexer → search for "beyond-hd" (built-in definition)
 #   #   Apps → Add Application → Sonarr / Radarr (sync indexers automatically)
 #
+# TAG-SYNC GOTCHA (cost a debugging session 2026-05-16): an Application with
+# Tags set syncs ONLY indexers sharing at least one tag; an Application with
+# NO tags syncs ALL indexers. If the Radarr/Sonarr apps carry tags (e.g.
+# movies/tv) but the indexers are untagged, Prowlarr SILENTLY syncs nothing —
+# "Application Indexer Sync" still reports completed, and Sonarr/Radarr just
+# show zero indexers. For this single-user instance the apps are kept
+# tag-less (sync everything). Only add app tags if you also tag the matching
+# indexers. Diagnose via /srv/prowlarr/config/logs/prowlarr.debug.txt:
+# "does not have any intersecting (matching) tags with <indexer>".
+#
 # Pi 4 B note: Prowlarr's .NET runtime is lighter than Sonarr/Radarr (~50–100 MB
 # idle). mem_limit: 256m is conservative but sufficient.
 #

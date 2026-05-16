@@ -68,6 +68,33 @@
           url: http://host.docker.internal:9696
           key: '{{HOMEPAGE_VAR_PROWLARR_KEY}}'
 
+    - Nextcloud:
+        # Tailscale-only (no Caddy route) — href + widget url use the
+        # tailnet name, same pattern as Navidrome. natto.tailaf7ea6.ts.net
+        # is already in the container's NEXTCLOUD_TRUSTED_DOMAINS, so the
+        # serverinfo widget's Host header passes the trusted-domain check.
+        href: http://natto.tailaf7ea6.ts.net:8081
+        icon: nextcloud.png
+        server: my-docker
+        container: nextcloud
+        widget:
+          type: nextcloud
+          url: http://natto.tailaf7ea6.ts.net:8081
+          username: nthncrtr
+          password: '{{HOMEPAGE_VAR_NEXTCLOUD_PASSWORD}}'
+
+    - Jellyfin:
+        # Tailscale-only (no Caddy route) — tailnet name like Navidrome.
+        href: http://natto.tailaf7ea6.ts.net:8096
+        icon: jellyfin.png
+        server: my-docker
+        container: jellyfin
+        widget:
+          type: jellyfin
+          url: http://natto.tailaf7ea6.ts.net:8096
+          key: '{{HOMEPAGE_VAR_JELLYFIN_KEY}}'
+          enableBlocks: true
+
 - starmaya:
     - Coffee Roasting:
         href: https://starmaya.nthncrtr.com
@@ -75,14 +102,3 @@
         widget:
           type: ping
           url: http://kvass.tailaf7ea6.ts.net:8080
-
-# Future:
-# - media-pi:
-#     - Jellyfin:
-#         href: https://jellyfin.nthncrtr.com
-#         description: Movies and shows
-#         icon: jellyfin.png
-#         widget:
-#           type: jellyfin
-#           url: http://<media-pi>.tailaf7ea6.ts.net:8096
-#           key: '{{HOMEPAGE_VAR_JELLYFIN_KEY}}'

@@ -121,15 +121,18 @@ sudo install -o caddy -g caddy -m 0600 /dev/stdin /etc/caddy/caddy.env <<< 'CF_A
 
 This is where the bulk of state arrives on the new host. Two sub-steps:
 
-**5a. Move the 5TB drive.** On old natto, stop services that hold open files on `/mnt/media` (Navidrome, qBittorrent, the *arrs):
+**5a. Move the 5TB drive.** On old natto, stop services that hold open files on `/mnt/media`. **This list is incomplete — see Gaps §7/§8:** `homepage` also bind-mounts `/mnt/media` (pins the fs), and Samba (`smbd`) exported it; both must stop too, or `umount` fails "target is busy". Confirm with `sudo fuser -vm /mnt/media` before unmounting.
 
 ```sh
 ssh natto
 cd /srv/qbittorrent && sudo docker compose down
 cd /srv/navidrome   && sudo docker compose down
+cd /srv/homepage    && sudo docker compose down   # bind-mounts /mnt/media
 cd /srv/radarr      && sudo docker compose down
 cd /srv/sonarr      && sudo docker compose down
 cd /srv/prowlarr    && sudo docker compose down 2>/dev/null || true
+sudo systemctl stop smbd nmbd 2>/dev/null || true  # if Samba present (now decommissioned)
+sudo fuser -vm /mnt/media || true                  # nothing held = good
 sudo umount /mnt/media
 ls /mnt/media   # should be empty
 ```
@@ -206,6 +209,14 @@ sudo journalctl -u caddy -n 50    # check for ACME / Cloudflare DNS errors
 Caddy needs a working internet connection to renew certs (DNS-01 via Cloudflare). It does NOT need port 80 reachable from outside.
 
 ### 7. Cut DNS over to the new host
+
+> **This step covers ONLY the external `*.nthncrtr.com` path. It does NOT
+> restore household DNS.** Old natto also served the *household* on a static
+> secondary LAN IP `192.168.1.50` (the DNS server GFiber DHCP hands clients).
+> That endpoint must be moved to the new host separately — see Gaps §9. Add
+> it before/at the §9 power-off: `sudo ip addr add 192.168.1.50/24 dev
+> enp1s0` (instant), then persist it as a second `addresses:` entry in
+> netplan. Verify with `dig @192.168.1.50 example.com` from a LAN host.
 
 This is the externally-visible cutover. Until you do it, all `*.nthncrtr.com` traffic still flows to the old natto.
 
@@ -352,4 +363,66 @@ If the new host is fine but you want to roll *backups* back: extract an older `/
 
 Each entry: date, what failed/needed manual intervention, and the fix.
 
-- *(empty — full cold-start dry-run hasn't happened yet; idempotency-only dry-run on natto on 2026-05-09 surfaced one bug, fixed in commit `a497e30`: the Caddy rebuild check was mtime-based and would falsely fire on any fresh repo clone.)*
+- 2026-05-09 idempotency-only dry-run on natto surfaced one bug, fixed in
+  commit `a497e30`: the Caddy rebuild check was mtime-based and would falsely
+  fire on any fresh repo clone.
+
+### 2026-05-16 — first real cold-start (Pi → Beelink, arm64 → x86_64)
+
+The full cold-start ran. It worked, but surfaced nine gaps. Several runbook
+steps below are now known-wrong on a cross-arch / Ubuntu run; this list is
+authoritative where it conflicts with the step text above.
+
+1. **`build.sh` hardcoded `GOARCH=arm64`.** `bootstrap` cross-compiled an
+   arm64 Caddy onto x86_64 (won't exec). Fixed `3ba3869` — derive arch from
+   `dpkg --print-architecture`. The runbook's "caddy rebuilds for the local
+   arch" (§2, §5) is now actually true.
+2. **`build.sh` used a nonexistent `xcaddy --with-build-flag`.** Cold
+   bootstrap failed `unknown flag`. Fixed `a684f1c` — pass build flags via
+   `XCADDY_GO_BUILD_FLAGS`. (Latent forever; only a real build invokes it.)
+3. **§5b reverts `/srv/nthncrtr-repo`.** The tarball contains the repo at
+   old-natto's (older) commit, and old-natto's checkout carried *untracked*
+   on-disk copies of files that are tracked upstream, blocking `git pull
+   --ff-only`. After the extract, reconcile: verify the conflicting files are
+   byte-identical to `origin/main` (`git hash-object` vs `git rev-parse
+   origin/main:<f>`), then `git clean -fd` (preserves gitignored secrets) +
+   `git pull --ff-only`. Do this **before** any `deploy.sh` (it rebuilds
+   Caddy from the repo's `build.sh`).
+4. **Ubuntu `systemd-resolved` owns `:53`.** Pi-hole's `0.0.0.0:53` bind
+   fails `address already in use` (the Pi/Debian/NetworkManager host never
+   hit this). Fix before §8 Pi-hole: drop-in
+   `/etc/systemd/resolved.conf.d/no-stub.conf` with `DNSStubListener=no`,
+   repoint `/etc/resolv.conf` to real upstreams so the host still resolves,
+   `systemctl restart systemd-resolved`, then bring Pi-hole up.
+5. **Caddyfile proxied colocated services via the host's own tailnet name**
+   (`natto.tailaf7ea6.ts.net:<port>`). The new box joined the tailnet as
+   `natto-1` (old node still registered), so every such upstream 502'd while
+   the `127.0.0.1` ones (home, pi-hole) were fine. Fixed `e13723b` — local
+   services use `127.0.0.1`.
+6. **The §4 (gap 4) Pi-hole fix breaks host MagicDNS.** With the resolved
+   stub disabled, `*.tailaf7ea6.ts.net` no longer resolves on the host, so
+   `starmaya → kvass.tailaf7ea6.ts.net` 502'd (tailnet *connectivity* to
+   kvass was fine: `tailscale ping kvass` ~8ms). Fixed `5cffc0a` — pin
+   kvass's stable Tailscale IP. Broader host-MagicDNS-vs-Pi-hole-:53
+   coexistence is an open follow-up; CLAUDE.md's "Reaching kvass" guidance
+   (`curl kvass.tailaf7ea6.ts.net` from natto) no longer works on the host.
+7. **§5a service-stop list is incomplete.** `homepage` bind-mounts
+   `/mnt/media` (a docker bind mount pins the fs → `umount` "target is
+   busy"); and Samba (`smbd`) exported `/mnt/media`. Both must be stopped
+   before `umount /mnt/media`, in addition to the services the runbook
+   lists. (Pi-hole does **not** touch `/mnt/media` — leave it up.)
+8. **Samba was an unmanaged service.** `\\natto\Music` (read-only share of
+   `/mnt/media`, smbd active+enabled) existed on old natto but was absent
+   from the repo/bootstrap/runbook. Decision (operator, 2026-05-16):
+   **deliberately dropped** — not reproduced on the Beelink.
+9. **Household LAN DNS endpoint (`192.168.1.50`) was entirely missing from
+   the runbook.** Old natto served household DNS on a static *secondary* IP
+   `192.168.1.50` (the GFiber-DHCP-handed DNS server; primary `.228` was
+   dynamic). §7/§9 only covered the Cloudflare/tailnet path. On power-off
+   the whole house loses DNS (clients fail over to a slower secondary —
+   degraded, not dead). The new host must claim `.50`: `ip addr add
+   192.168.1.50/24 dev enp1s0` (instant) then persist it as a second address
+   in netplan. **Also:** this run had old natto unplugged *early* (before
+   §1), so the planned zero-downtime cutover became a live degraded-DNS
+   window — keep old natto serving until Pi-hole + `.50` are up on the new
+   host unless you accept that window.

@@ -6,7 +6,7 @@ You are working in the version-controlled config + operational runbook for a sma
 
 | Host | Hostname | Role | OS / Arch | Services |
 |---|---|---|---|---|
-| **natto** | `natto` | Hub | Raspberry Pi, arm64, Debian 13 (migration to Beelink Mini S12 / x86_64 in progress — see `runbooks/migrate-natto.md`) | Caddy (native, systemd), Pi-hole, Navidrome, Homepage, qBittorrent (behind Gluetun + Proton VPN), Nextcloud (Tailscale-only; activates at the Beelink cutover) — all docker-managed compose projects |
+| **natto** | `natto` | Hub | Beelink Mini S12, x86_64, Ubuntu Server 26.04 LTS (migrated from Raspberry Pi/arm64/Debian on 2026-05-16 — see `runbooks/migrate-natto.md` Gaps §"2026-05-16") | Caddy (native, systemd), Pi-hole, Navidrome, Homepage, qBittorrent (behind Gluetun + Proton VPN), the *arrs — all docker-managed compose projects. Nextcloud scaffolding present but **not yet deployed** (deferred at cutover). Samba `\\natto\Music` was **decommissioned** at the migration (not reproduced). |
 | **starmaya** | `kvass` (machine), `starmaya` (canonical) | Workshop appliance | Raspberry Pi, arm64, Debian 13 | `roaster-daemon` + `roaster-web` (Node.js, native systemd). On natto's tailnet as `kvass.tailaf7ea6.ts.net`. |
 | **workhorse** | `workhorse` | Client + dev | Intel Mac | Tailscale only — hosts no services. This is where you typically run from. |
 
@@ -141,11 +141,11 @@ Caddy's secret (`CF_API_TOKEN`) lives at `/etc/caddy/caddy.env` (mode 0600, owne
 
 ### Reaching kvass
 
-kvass is on natto's tailnet as `kvass.tailaf7ea6.ts.net` (IP `100.65.46.92`). From workhorse, `ssh kvass` works over the LAN. From natto, use the tailnet hostname — e.g. `curl http://kvass.tailaf7ea6.ts.net:8080` is the roaster-web HTTP endpoint that backs `starmaya.nthncrtr.com`.
+kvass is on natto's tailnet as `kvass.tailaf7ea6.ts.net` (IP `100.65.46.92`). From workhorse, `ssh kvass` works over the LAN. **From natto, MagicDNS does NOT resolve** (since the 2026-05-16 migration: natto runs Pi-hole on `:53`, so systemd-resolved's stub — the path Tailscale MagicDNS rides — is disabled). Use the **Tailscale IP**, not the name: `curl http://100.65.46.92:8080` is the roaster-web endpoint that backs `starmaya.nthncrtr.com` (this is why the Caddyfile pins that IP). Tailnet *connectivity* is fine — `tailscale ping kvass` works. Restoring host-wide MagicDNS without breaking Pi-hole is an open follow-up.
 
 ### When debugging weird state, check disk space first
 
-natto's root fs is a 15G SD card and has hit 100% before. A full disk causes *silent* failures, not loud ones: **pihole-FTL** writes to `pihole.toml` truncate to zero (so it boots from "default config" and wipes upstream DNS), and **Navidrome** SQLite checkpoints can't drain the WAL (multi-GB `navidrome.db-wal` builds up). Both look like a healthy running service that's just behaving wrong. Run `ssh natto 'df -h /'` early in any session that involves degraded state — it'll save you hours of guessing.
+natto's root fs (since 2026-05-16: a 238G ext4 SSD on the Beelink, no longer a 15G SD card — disk-full is far less likely but the *failure mode* below is the same) has hit 100% before. A full disk causes *silent* failures, not loud ones: **pihole-FTL** writes to `pihole.toml` truncate to zero (so it boots from "default config" and wipes upstream DNS), and **Navidrome** SQLite checkpoints can't drain the WAL (multi-GB `navidrome.db-wal` builds up). Both look like a healthy running service that's just behaving wrong. Run `ssh natto 'df -h /'` early in any session that involves degraded state — it'll save you hours of guessing.
 
 ## Where to look for what
 

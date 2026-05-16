@@ -162,7 +162,13 @@ Idempotent bootstrap that brings a fresh host to the point where `docker compose
 - The script is additive; partial runs are safe to re-run after fixing the failing step.
 - If a host is genuinely broken (e.g., wrong Docker repo configured): document the manual remediation in `runbooks/migrate-natto.md` § Gaps.
 
-### 2.2 VM dry-run of bootstrap  [PARTIAL — idempotency proved on natto; cold-start deferred]
+### 2.2 VM dry-run of bootstrap  [DONE — real cold-start executed 2026-05-16 (Pi→Beelink); 9 gaps recorded in runbook]
+
+> The deferred cold-start happened for real, not in a VM: the live
+> Pi→Beelink migration on 2026-05-16. It succeeded; nine gaps were found
+> and either fixed in-repo (`3ba3869`, `a684f1c`, `e13723b`, `5cffc0a`) or
+> recorded — see `runbooks/migrate-natto.md` Gaps §"2026-05-16". One open
+> follow-up: host-wide MagicDNS vs Pi-hole-owns-`:53` (see Phase 4).
 
 Prove the script runs end-to-end on a clean host without leaning on the live natto.
 
@@ -379,6 +385,25 @@ Right now Navidrome serves from `/mnt/media/music`. If Jellyfin is on the table,
 **Rollback:**
 - See `runbooks/media-layout.md` § Rollback for the reverse-direction script. All moves stayed within the exfat fs so they're truly reversible without re-copying.
 
+### 4.4 Host-wide MagicDNS vs Pi-hole-owns-:53  [OPEN — surfaced 2026-05-16 migration]
+
+On the Beelink, Pi-hole binds `0.0.0.0:53`, so systemd-resolved's stub
+listener is disabled — and that stub is the path Tailscale MagicDNS rides.
+Result: `*.tailaf7ea6.ts.net` does not resolve **on natto itself** (tailnet
+*connectivity* is fine). Worked around by IP-addressing every Caddy upstream
+(`5cffc0a`); CLAUDE.md's "Reaching kvass" updated to use the IP.
+
+**Decide a deliberate fix** (not a cutover improvisation), e.g.: a Pi-hole
+conditional forwarder for `tailaf7ea6.ts.net` → `100.100.100.100` and point
+the host resolver at Pi-hole; or a dedicated dnsmasq/`systemd-resolved`
+split-DNS that coexists with Pi-hole on `:53`. Until then, use Tailscale IPs
+from natto and don't rely on tailnet names in host-side config.
+
+**Success criteria:**
+- `getent hosts kvass.tailaf7ea6.ts.net` resolves on natto.
+- Pi-hole still owns `:53` for the household; `dig @192.168.1.50 example.com` still answers.
+- No regression to the `*.nthncrtr.com` smoke set.
+
 ---
 
 ## Phase 5 — Self-hosted Google Drive replacement (Nextcloud)
@@ -468,7 +493,14 @@ after 5.4, following the runbook.
 **Rollback:** Documentation only — `git revert`. The runbook's own rollback
 section covers a botched copy (additive; Google untouched until verified).
 
-### 5.4 Cutover activation  [PENDING — gated on the Pi → Beelink migration]
+### 5.4 Cutover activation  [PENDING — gate LIFTED 2026-05-16 (migration done); deferred at operator's choice]
+
+> The Pi→Beelink migration completed 2026-05-16, so this is no longer
+> *gated* — just not yet done (operator chose to defer Nextcloud during the
+> cutover). Old natto never ran Nextcloud, so this is the **initial** Drive
+> migration (`runbooks/migrate-off-gdrive.md`), not a restore. Note: the
+> tailnet-name success check below is reached *from another tailnet node*,
+> not from natto itself (no MagicDNS on the host post-migration).
 
 **Preconditions:**
 - Missions 5.1–5.3 committed.

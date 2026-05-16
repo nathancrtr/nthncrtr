@@ -568,7 +568,13 @@ remains a separate operator action, not part of this mission.
   login works; no Administration → Overview blocking warnings.
 - No Caddyfile/Cloudflare change (Tailscale-only by design).
 
-**Outcome:** (filled in at deploy.)
+**Outcome:** Done 2026-05-16. `deploy.sh nextcloud` brought up all four
+containers; `secrets.env` provisioned (root:root 0600, generated creds,
+admin `nthncrtr`). `occ status` → `installed: true`, v33.0.3,
+`maintenance: false`, `needsDbUpgrade: false`. `status.php` → 200 on both
+`127.0.0.1:8081` and `http://natto.tailaf7ea6.ts.net:8081`. Caddyfile
+untouched. Google Drive pull (`runbooks/migrate-off-gdrive.md`) remains
+outstanding as a separate operator action.
 
 **Rollback:** `cd /srv/nextcloud && docker compose down` — independent of
 every other service, zero DNS/Caddy impact.
@@ -595,7 +601,13 @@ every other service, zero DNS/Caddy impact.
 - HW transcode: `/dev/dri/renderD128` visible in-container; QSV selectable
   under Dashboard → Playback.
 
-**Outcome:** (filled in at deploy.)
+**Outcome:** Done 2026-05-16. `deploy.sh jellyfin` created
+`/srv/jellyfin/{config,cache}` (1000:1000) and brought the container up.
+Web UI → 200 on `127.0.0.1:8096` and `http://natto.tailaf7ea6.ts.net:8096`.
+`/dev/dri/{card0,renderD128}` present in-container (renderD128 shows the
+linuxserver synthetic group name for host gid 991 — numeric supplementary
+membership intact). Library import + QSV enablement are the operator's
+first-run UI steps (services/jellyfin/README.md). Caddyfile untouched.
 
 **Rollback:** `cd /srv/jellyfin && docker compose down`; revert the repo
 commit. Config/cache under `/srv/jellyfin` is disposable; media untouched

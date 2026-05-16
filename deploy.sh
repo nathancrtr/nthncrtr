@@ -11,8 +11,8 @@
 # One-time bootstrap (not handled here): git clone this repo to
 # /srv/nthncrtr-repo and put a read-only deploy key at /root/.ssh/.
 #
-# Services: caddy navidrome homepage backup qbittorrent radarr sonarr prowlarr pihole starmaya
-# Default (no service args): caddy navidrome homepage backup qbittorrent radarr sonarr prowlarr
+# Services: caddy navidrome homepage backup qbittorrent radarr sonarr prowlarr nextcloud pihole starmaya
+# Default (no service args): caddy navidrome homepage backup qbittorrent radarr sonarr prowlarr nextcloud
 #   — pihole is gated behind --yes-pihole (DNS outage for ~30s).
 #   — starmaya must be requested explicitly (deploys to kvass over ssh).
 #
@@ -31,8 +31,8 @@ usage() {
   cat <<'EOF'
 Usage: sudo ./deploy.sh [--dry-run] [--yes-pihole] [services...]
 
-Services: caddy navidrome homepage backup qbittorrent radarr sonarr prowlarr pihole starmaya
-Default (no service args): caddy navidrome homepage backup qbittorrent radarr sonarr prowlarr
+Services: caddy navidrome homepage backup qbittorrent radarr sonarr prowlarr nextcloud pihole starmaya
+Default (no service args): caddy navidrome homepage backup qbittorrent radarr sonarr prowlarr nextcloud
 EOF
   exit "${1:-0}"
 }
@@ -50,7 +50,7 @@ done
 
 SERVICES=("$@")
 if [[ ${#SERVICES[@]} -eq 0 ]]; then
-  SERVICES=(caddy navidrome homepage backup qbittorrent radarr sonarr prowlarr)
+  SERVICES=(caddy navidrome homepage backup qbittorrent radarr sonarr prowlarr nextcloud)
   (( YES_PIHOLE )) && SERVICES+=(pihole)
 fi
 
@@ -259,6 +259,33 @@ deploy_prowlarr() {
   compose_up prowlarr
   sleep 3
   verify_url https://prowlarr.nthncrtr.com 200 || true
+}
+
+deploy_nextcloud() {
+  log "nextcloud"
+  local CHANGED=0
+  (( DRY_RUN )) || {
+    # Parent + the three bind targets. Created root-owned and empty; the
+    # nextcloud (www-data) and mariadb (mysql) images chown their own
+    # subtrees on first init. Tailscale-only — no Caddyfile route to deploy.
+    [[ -d /srv/nextcloud ]]      || { install -d -o root -g root -m 0755 /srv/nextcloud;      note "created /srv/nextcloud"; }
+    [[ -d /srv/nextcloud/html ]] || { install -d -o root -g root -m 0755 /srv/nextcloud/html; note "created /srv/nextcloud/html"; }
+    [[ -d /srv/nextcloud/data ]] || { install -d -o root -g root -m 0755 /srv/nextcloud/data; note "created /srv/nextcloud/data"; }
+    [[ -d /srv/nextcloud/db ]]   || { install -d -o root -g root -m 0755 /srv/nextcloud/db;   note "created /srv/nextcloud/db"; }
+  }
+  install_file "$REPO_ROOT/services/nextcloud/docker-compose.yml" /srv/nextcloud/docker-compose.yml
+  (( DRY_RUN )) && return 0
+  # Without secrets.env the DB has no root password and Nextcloud can't run
+  # its first-run install — surface it rather than letting the stack flap.
+  if [[ ! -f /srv/nextcloud/secrets.env ]]; then
+    warn "/srv/nextcloud/secrets.env not found — see services/nextcloud/secrets.env.example"
+    warn "Nextcloud + MariaDB will not initialize until credentials are provisioned."
+  fi
+  compose_up nextcloud
+  sleep 5
+  # Tailscale-only: no public URL. status.php answers 200 (with JSON) even
+  # pre-install, so it's a fair liveness probe.
+  verify_url http://127.0.0.1:8081/status.php 200 || true
 }
 
 deploy_pihole() {

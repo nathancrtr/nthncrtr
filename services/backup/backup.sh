@@ -32,6 +32,17 @@ SOURCES=(
   /etc/systemd/system/caddy.service
 )
 
+# Nextcloud's bulk data and the live MariaDB datadir are excluded from the
+# file tar: hot-copying an InnoDB datadir yields an unrestorable archive, and
+# the user data is too large to duplicate nightly. Instead we dump the DB
+# logically (below) into /srv/nextcloud/db-dump.sql.gz, which IS under /srv
+# and so IS captured; the user data is mirrored weekly by
+# nextcloud-data-sync.timer. See services/nextcloud/README.md.
+EXCLUDES=(
+  --exclude=/srv/nextcloud/data
+  --exclude=/srv/nextcloud/db
+)
+
 # --- preflight ---------------------------------------------------------------
 if [[ $EUID -ne 0 ]]; then
   echo "Run as root or via sudo." >&2
@@ -55,8 +66,29 @@ if ! touch "$DEST_DIR/.write-test" 2>/dev/null; then
 fi
 rm -f "$DEST_DIR/.write-test"
 
-# Free-space check: require at least the size of the source set, plus 10% headroom.
-src_kb=$(du -sk --total "${SOURCES[@]}" 2>/dev/null | tail -1 | awk '{print $1}')
+# --- Nextcloud logical DB dump ------------------------------------------------
+# Only if Nextcloud is actually deployed here (the current Pi has no such
+# container, so this is a no-op there). A dump failure is loud but non-fatal:
+# it must not sink the whole nightly backup of every other service.
+if command -v docker >/dev/null 2>&1 \
+   && docker ps --format '{{.Names}}' 2>/dev/null | grep -qx nextcloud-db; then
+  nc_dump=/srv/nextcloud/db-dump.sql.gz
+  nc_tmp="$nc_dump.partial"
+  if docker exec nextcloud-db sh -c \
+       'exec mariadb-dump --single-transaction --quick --default-character-set=utf8mb4 -u root -p"$MYSQL_ROOT_PASSWORD" "$MYSQL_DATABASE"' \
+       2>/dev/null | gzip > "$nc_tmp"; then
+    mv -f "$nc_tmp" "$nc_dump"
+    printf '[backup] wrote Nextcloud DB dump %s (%d bytes)\n' "$nc_dump" "$(stat -c%s "$nc_dump")"
+  else
+    rm -f "$nc_tmp"
+    echo "[backup] WARNING: Nextcloud DB dump failed — tarball will carry the previous dump (if any)" >&2
+  fi
+fi
+
+# Free-space check: require at least the size of the source set, plus 10%
+# headroom. EXCLUDES are applied here too so the estimate isn't inflated by
+# the (excluded) Nextcloud data/datadir.
+src_kb=$(du -sk --total "${EXCLUDES[@]}" "${SOURCES[@]}" 2>/dev/null | tail -1 | awk '{print $1}')
 free_kb=$(df --output=avail -k "$DEST_DIR" | tail -1)
 need_kb=$(( src_kb * 110 / 100 ))
 if (( free_kb < need_kb )); then
@@ -70,7 +102,7 @@ fi
 tmp="$DEST.partial"
 trap 'rm -f "$tmp"' EXIT
 
-tar -czPf "$tmp" "${SOURCES[@]}"
+tar "${EXCLUDES[@]}" -czPf "$tmp" "${SOURCES[@]}"
 mv -f "$tmp" "$DEST"
 trap - EXIT
 

@@ -378,3 +378,119 @@ Right now Navidrome serves from `/mnt/media/music`. If Jellyfin is on the table,
 
 **Rollback:**
 - See `runbooks/media-layout.md` § Rollback for the reverse-direction script. All moves stayed within the exfat fs so they're truly reversible without re-copying.
+
+---
+
+## Phase 5 — Self-hosted Google Drive replacement (Nextcloud)
+
+Goal: a one-time migration *off* Google Drive onto self-hosted Nextcloud,
+Tailscale-only. Decided with the operator: model = one-time data liberation
+(not ongoing sync); reach = Tailscale-only; storage = Beelink internal ext4
+(Drive is < 50 GB); sequencing = repo scaffolding now, activates at the
+Pi → Beelink cutover (nothing deploys to the current Pi).
+
+### 5.1 Storage decision + Nextcloud service scaffolding  [DONE — scaffolding; activation pending Beelink cutover]
+
+**Preconditions:**
+- Operator decisions captured (model / reach / storage / sequencing — see above).
+- Repo `git status` clean before starting.
+
+**Success criteria:**
+- Storage resolved: Nextcloud data + DB on the Beelink's internal ext4 at
+  `/srv/nextcloud/{html,data,db}` — *not* the exfat 5TB (exfat can't give the
+  DB/data POSIX semantics, and the 5TB must stay exfat for the migration
+  design + safety rule #3). < 50 GB Drive fits internal with headroom.
+- `services/nextcloud/` committed: `docker-compose.yml` (nextcloud:stable
+  apache + mariadb:lts + redis:alpine + cron sidecar), `README.md`,
+  `secrets.env.example`, `.gitignore` (excludes `secrets.env`). Tailscale-only
+  — deliberately **no** Caddyfile/Cloudflare route.
+- `bootstrap/natto.sh` `step_srv` creates `/srv/nextcloud` + installs the
+  compose; banner lists the secrets file + bring-up.
+- `deploy.sh` gains `deploy_nextcloud` (creates the bind dirs, warns on
+  missing `secrets.env`, `compose up`, verifies `127.0.0.1:8081/status.php`);
+  `nextcloud` added to the default service set + usage.
+- Nothing deploys to the live Pi.
+
+**Outcome:**
+- All of the above committed. Activation deferred to mission 5.4 (the
+  Pi → Beelink cutover) — the Pi can't host this well and a throwaway
+  deploy there would be wasted effort.
+
+**Rollback:**
+- Additive only — `git revert` the scaffolding commit; no running service is
+  affected (nothing deployed yet).
+
+### 5.2 Backup integration  [DONE]
+
+**Preconditions:** Mission 5.1 committed.
+
+**Success criteria:**
+- `backup.sh` excludes `/srv/nextcloud/{data,db}` from the nightly tar (a
+  hot InnoDB datadir tar is unrestorable; user data too large to duplicate
+  nightly), and writes a guarded logical `mariadb-dump` →
+  `/srv/nextcloud/db-dump.sql.gz` (small, *is* tarred). Dump is skipped
+  silently when `nextcloud-db` is absent (current Pi) and a dump failure
+  warns but does not fail the whole backup. Free-space `du` honors the same
+  excludes so the estimate isn't inflated.
+- New weekly `nextcloud-data-sync.{sh,service,timer}` rsyncs
+  `/srv/nextcloud/data` → `/mnt/media/backups/nextcloud-data/` as a single
+  `--delete` mirror (one copy, not 7 daily dupes — operator's choice). No-op
+  exit 0 when Nextcloud isn't deployed yet.
+- `bootstrap` `step_backup` + `deploy.sh` install all six backup files and
+  enable both timers. `services/backup/README.md` documents the split and
+  the restore procedure.
+
+**Outcome:** Committed. First real exercise happens post-cutover (5.4).
+
+**Rollback:** `git revert`; backup is non-destructive. Old `backup.sh`
+behavior (tar all of `/srv`) is restored by the revert.
+
+### 5.3 Google Drive migration runbook  [DONE — execution pending operator]
+
+**Preconditions:** Missions 5.1–5.2 committed.
+
+**Success criteria:**
+- `runbooks/migrate-off-gdrive.md` committed: rclone remote setup (with the
+  own-client-id rate-limit warning), the Google-native export-format decision
+  (MS Office recommended; ODF / PDF alternatives spelled out), dry-run sizing
+  gate against the < 50 GB assumption, copy → chown → `occ files:scan`,
+  verification checklist, and an explicit "deleting from Google is manual and
+  out of scope" boundary.
+- `runbooks/migrate-natto.md` threaded: Nextcloud secrets in Prerequisites;
+  § 5b restore (DB dump + weekly data mirror, since `data`/`db` aren't in the
+  tarball); § 8 bring-up + smoke; note that it's Tailscale-only so absent
+  from the § 7 DNS cutover.
+- `CLAUDE.md` architecture table + repo-layout tree updated (drift fix).
+
+**Outcome:** Committed. The actual Drive pull is an operator action, run once
+after 5.4, following the runbook.
+
+**Rollback:** Documentation only — `git revert`. The runbook's own rollback
+section covers a botched copy (additive; Google untouched until verified).
+
+### 5.4 Cutover activation  [PENDING — gated on the Pi → Beelink migration]
+
+**Preconditions:**
+- Missions 5.1–5.3 committed.
+- Pi → Beelink migration underway per `runbooks/migrate-natto.md` (Beelink
+  bootstrapped, `/srv` restored, 5TB moved).
+- `/srv/nextcloud/secrets.env` provisioned (mode 0600).
+
+**Success criteria:**
+- `deploy.sh nextcloud` (or the § 8 manual bring-up) starts all four
+  containers; `127.0.0.1:8081/status.php` → 200 and
+  `occ status` → `installed: true`.
+- Reachable on the tailnet at `http://natto.tailaf7ea6.ts.net:8081`; admin
+  login works; no Administration → Overview warnings.
+- Nightly backup produces a fresh `/srv/nextcloud/db-dump.sql.gz` inside the
+  tarball; `nextcloud-data-sync.timer` produces
+  `/mnt/media/backups/nextcloud-data/` on its first weekly run (or a manual
+  `systemctl start nextcloud-data-sync.service`).
+- Then, once: execute `runbooks/migrate-off-gdrive.md`.
+
+**Outcome:** (to be filled in at cutover.)
+
+**Rollback:**
+- Nextcloud is independent of every other service — `cd /srv/nextcloud &&
+  docker compose down` removes it with zero impact on DNS/Caddy/the rest.
+  Re-run when ready.

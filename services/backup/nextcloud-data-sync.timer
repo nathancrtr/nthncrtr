@@ -1,0 +1,11 @@
+[Unit]
+Description=Weekly run of nextcloud-data-sync.service
+
+[Timer]
+OnCalendar=Sun *-*-* 04:30:00
+RandomizedDelaySec=30min
+Persistent=true
+Unit=nextcloud-data-sync.service
+
+[Install]
+WantedBy=timers.target

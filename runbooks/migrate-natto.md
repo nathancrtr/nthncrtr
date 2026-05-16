@@ -19,7 +19,7 @@ The 5TB USB drive is exfat (cross-platform, cross-arch). It physically unplugs f
 - **Backup tarball:** the most recent `/mnt/media/backups/natto-YYYY-MM-DD.tgz` from old natto (the daily `natto-backup.timer` produces these). Two ways to get it onto the new host:
   - *(preferred, no copy)* Leave it on the 5TB drive. After the drive is unplugged from old natto and plugged into the Beelink, the tarball is at `/mnt/media/backups/natto-YYYY-MM-DD.tgz` directly.
   - *(if you can't move the drive yet)* `scp old-natto:/mnt/media/backups/natto-latest.tgz new-natto:/tmp/`.
-- **Secrets in hand:** Cloudflare API token (for `caddy.env`), Pi-hole admin password (or accept the auto-generated one and reset via web UI), Proton VPN WireGuard private key + forwarded-port-enabled config (for qBittorrent), Orpheus API key if you're mid-restore.
+- **Secrets in hand:** Cloudflare API token (for `caddy.env`), Pi-hole admin password (or accept the auto-generated one and reset via web UI), Proton VPN WireGuard private key + forwarded-port-enabled config (for qBittorrent), Orpheus API key if you're mid-restore, Nextcloud `secrets.env` values (MariaDB + admin creds — reuse the old host's `/srv/nextcloud/secrets.env`; it is *not* in the backup tarball).
 
 ## Migration order
 
@@ -128,7 +128,31 @@ ls /srv/pihole /srv/navidrome /srv/homepage /srv/qbittorrent /srv/radarr /srv/so
 
 If the backup includes `/etc/caddy/caddy.env`, the manual install in § 4 was redundant; harmless either way.
 
-Same-arch migration (e.g., Pi → Pi)? Drop the `--exclude` — the arm64 Caddy binary from the tarball will simply overwrite the matching one bootstrap built. It still works.
+Same-arch migration (e.g., Pi → Pi)? Drop the `--exclude='/usr/local/bin/caddy'` — the arm64 Caddy binary from the tarball will simply overwrite the matching one bootstrap built. It still works.
+
+**Nextcloud is only partially in the tarball — restore it deliberately.** The
+nightly backup excludes `/srv/nextcloud/{data,db}` (see `services/backup/README.md`).
+After the tar extract you have `/srv/nextcloud/html/` and the logical dump
+`/srv/nextcloud/db-dump.sql.gz`, but an *empty* `data/` and `db/`. Restore order:
+
+```sh
+# 1. Bring up just the DB on a fresh datadir, let it initialize, then load
+#    the dump (provide /srv/nextcloud/secrets.env first — see Prerequisites).
+cd /srv/nextcloud && docker compose up -d nextcloud-db
+sleep 20
+zcat /srv/nextcloud/db-dump.sql.gz | \
+  docker exec -i nextcloud-db sh -c 'mariadb -u root -p"$MYSQL_ROOT_PASSWORD" "$MYSQL_DATABASE"'
+
+# 2. Refill user files from the weekly mirror on the 5TB drive.
+sudo rsync -aH --numeric-ids \
+  /mnt/media/backups/nextcloud-data/ /srv/nextcloud/data/
+
+# 3. Bring up the rest (covered by § 8 below).
+```
+
+If this is the *initial* Drive migration (no prior natto Nextcloud existed),
+skip the above entirely — there's nothing to restore; follow
+`runbooks/migrate-off-gdrive.md` once the stack is up.
 
 ### 6. Start Caddy
 
@@ -176,11 +200,20 @@ curl -fsSL -o /dev/null -w '%{http_code}\n' https://torrent.nthncrtr.com/    # 2
 cd /srv/radarr   && sudo docker compose up -d
 cd /srv/sonarr   && sudo docker compose up -d
 cd /srv/prowlarr && sudo docker compose up -d
+
+# Nextcloud — Tailscale-only, so it has NO Cloudflare A record and was NOT
+# part of the § 7 DNS cutover. Provide /srv/nextcloud/secrets.env first
+# (Prerequisites), and if restoring an existing instance do the DB+data
+# restore in § 5b before this. status.php answers 200 once it's healthy.
+cd /srv/nextcloud && sudo docker compose up -d
+sleep 20
+curl -fsSL -o /dev/null -w '%{http_code}\n' http://127.0.0.1:8081/status.php   # 200
+docker exec -u www-data nextcloud php occ status                               # installed: true
 ```
 
 ### 8.5. End-to-end smoke check via deploy.sh
 
-`deploy.sh` with no args runs the full default set (`caddy navidrome homepage backup qbittorrent radarr sonarr prowlarr`) and is also a useful smoke check: re-running it after § 8 should be effectively a no-op if everything came up correctly.
+`deploy.sh` with no args runs the full default set (`caddy navidrome homepage backup qbittorrent radarr sonarr prowlarr nextcloud`) and is also a useful smoke check: re-running it after § 8 should be effectively a no-op if everything came up correctly.
 
 ```sh
 cd /srv/nthncrtr-repo

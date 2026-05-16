@@ -1,0 +1,107 @@
+# Nextcloud — self-hosted replacement for Google Drive. Managed by deploy.sh
+# (deploy.sh nextcloud).
+#
+# Topology: the official `nextcloud:stable` (apache) image, a dedicated
+# MariaDB, a Redis for transactional file locking + memcache, and a cron
+# sidecar that runs Nextcloud's background jobs every 5 min (the only correct
+# cron mode for a containerized Nextcloud — the AJAX/webcron modes are not).
+#
+# Reachability: Tailscale-only by design. There is deliberately NO Caddyfile
+# route and NO Cloudflare DNS entry for this service — it holds a mirror of
+# personal Drive data and is reached only on the tailnet at
+# http://natto.tailaf7ea6.ts.net:8081 (or http://natto:8081 on the LAN).
+# 8081 because 8080 is taken by gluetun (qBittorrent).
+#
+# Data layout on natto (all on the Beelink's internal ext4 — NOT the exfat
+# 5TB drive; Nextcloud needs POSIX semantics its data dir + DB can't get on
+# exfat):
+#   /srv/nextcloud/html  → app code + config.php + installed apps
+#   /srv/nextcloud/data  → user files (the migrated Drive content)
+#   /srv/nextcloud/db    → MariaDB datadir
+#
+# Backups: the nightly natto-*.tgz EXCLUDES /srv/nextcloud/{data,db} (a hot
+# tar of an InnoDB datadir is unsafe, and the user data is large). Instead
+# backup.sh writes a logical DB dump to /srv/nextcloud/db-dump.sql.gz (small,
+# IS tarred) and nextcloud-data-sync.timer mirrors the data dir weekly to
+# /mnt/media/backups/nextcloud-data/. See services/backup/README.md.
+services:
+  nextcloud-db:
+    image: mariadb:lts
+    container_name: nextcloud-db
+    # Nextcloud's documented MariaDB tuning. READ-COMMITTED + ROW binlog is
+    # what Nextcloud's admin manual prescribes.
+    command: >-
+      --transaction-isolation=READ-COMMITTED
+      --log-bin=binlog
+      --binlog-format=ROW
+    volumes:
+      - ./db:/var/lib/mysql
+    env_file:
+      # secrets.env is NOT in the repo — see secrets.env.example for the
+      # variable list. On natto: /srv/nextcloud/secrets.env, mode 0600.
+      # Optional so `docker compose config` works on workhorse where the file
+      # is intentionally absent.
+      - path: secrets.env
+        required: false
+    environment:
+      - TZ=America/New_York
+    healthcheck:
+      test: ["CMD", "healthcheck.sh", "--connect", "--innodb_initialized"]
+      interval: 15s
+      timeout: 5s
+      retries: 10
+    restart: unless-stopped
+
+  nextcloud-redis:
+    image: redis:alpine
+    container_name: nextcloud-redis
+    command: ["redis-server", "--save", "", "--appendonly", "no"]
+    environment:
+      - TZ=America/New_York
+    restart: unless-stopped
+
+  nextcloud:
+    image: nextcloud:stable
+    container_name: nextcloud
+    ports:
+      - "8081:80"
+    volumes:
+      - ./html:/var/www/html
+      - ./data:/var/www/html/data
+    env_file:
+      - path: secrets.env
+        required: false
+    environment:
+      - MYSQL_HOST=nextcloud-db
+      - REDIS_HOST=nextcloud-redis
+      - NEXTCLOUD_DATA_DIR=/var/www/html/data
+      # Tailnet + LAN hostnames Nextcloud will answer to. Add more later with
+      # `occ config:system:set trusted_domains N --value=...` if the tailnet
+      # name changes (it can after a host migration — see migrate-natto.md).
+      - NEXTCLOUD_TRUSTED_DOMAINS=localhost natto natto.tailaf7ea6.ts.net
+      - OVERWRITECLIURL=http://natto.tailaf7ea6.ts.net:8081
+      - PHP_MEMORY_LIMIT=512M
+      - PHP_UPLOAD_LIMIT=16G
+      - TZ=America/New_York
+    depends_on:
+      nextcloud-db:
+        condition: service_healthy
+      nextcloud-redis:
+        condition: service_started
+    restart: unless-stopped
+
+  nextcloud-cron:
+    image: nextcloud:stable
+    container_name: nextcloud-cron
+    entrypoint: /cron.sh
+    volumes:
+      - ./html:/var/www/html
+      - ./data:/var/www/html/data
+    environment:
+      - TZ=America/New_York
+    depends_on:
+      nextcloud-db:
+        condition: service_healthy
+      nextcloud-redis:
+        condition: service_started
+    restart: unless-stopped

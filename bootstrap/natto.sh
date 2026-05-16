@@ -265,6 +265,10 @@ step_srv() {
               -g "$(getent group  1000 | cut -d: -f1)" -m 0755 /srv/prowlarr
   install -d -o "$(getent passwd 1000 | cut -d: -f1)" \
               -g "$(getent group  1000 | cut -d: -f1)" -m 0755 /srv/qbittorrent
+  # Nextcloud: parent dir only. The html/data/db subdirs are created by
+  # deploy.sh and their contents are owned by the in-container UIDs
+  # (www-data, mysql) — encoding those host-side here would be wrong.
+  install -d -o root -g root -m 0755 /srv/nextcloud
 
   # Copy compose files (root-owned, world-readable so the docker group user
   # can `docker compose ...` against them).
@@ -282,6 +286,8 @@ step_srv() {
     "$REPO_ROOT/services/prowlarr/docker-compose.yml"  /srv/prowlarr/docker-compose.yml
   install -o root -g root -m 0644 \
     "$REPO_ROOT/services/qbittorrent/docker-compose.yml" /srv/qbittorrent/docker-compose.yml
+  install -o root -g root -m 0644 \
+    "$REPO_ROOT/services/nextcloud/docker-compose.yml"   /srv/nextcloud/docker-compose.yml
 }
 
 # ---------------------------------------------------------------------------
@@ -297,8 +303,19 @@ step_backup() {
   install -o root -g root -m 0644 \
     "$REPO_ROOT/services/backup/natto-backup.timer" \
     /etc/systemd/system/natto-backup.timer
+  # Weekly Nextcloud data mirror (no-op on hosts without Nextcloud deployed).
+  install -o root -g root -m 0755 \
+    "$REPO_ROOT/services/backup/nextcloud-data-sync.sh" \
+    /usr/local/sbin/nextcloud-data-sync
+  install -o root -g root -m 0644 \
+    "$REPO_ROOT/services/backup/nextcloud-data-sync.service" \
+    /etc/systemd/system/nextcloud-data-sync.service
+  install -o root -g root -m 0644 \
+    "$REPO_ROOT/services/backup/nextcloud-data-sync.timer" \
+    /etc/systemd/system/nextcloud-data-sync.timer
   systemctl daemon-reload
   systemctl enable --now natto-backup.timer
+  systemctl enable --now nextcloud-data-sync.timer
 
   # Create the backup target if the 5TB drive is mounted; warn otherwise.
   if mountpoint -q /mnt/media; then
@@ -327,6 +344,8 @@ Next steps (operator):
             sudo install -o caddy -g caddy -m 0600 /dev/stdin /etc/caddy/caddy.env <<<'CF_API_TOKEN=<token>'
        b. Pi-hole admin password — set on first run via Pi-hole's web UI, or
           export WEBPASSWORD=... in the compose environment before bringing it up.
+       c. /srv/nextcloud/secrets.env — MariaDB + Nextcloud admin creds, mode
+          0600. See services/nextcloud/secrets.env.example.
 
   3. Restore service data from the latest /mnt/media/backups/natto-*.tgz tarball
      into /srv/{pihole,navidrome,homepage}/. (See runbooks/migrate-natto.md.)
@@ -341,6 +360,7 @@ Next steps (operator):
        cd /srv/navidrome   && docker compose up -d   # then curl https://natto.nthncrtr.com/ping
        cd /srv/homepage    && docker compose up -d   # then curl https://home.nthncrtr.com
        cd /srv/qbittorrent && docker compose up -d   # then curl https://torrent.nthncrtr.com
+       cd /srv/nextcloud   && docker compose up -d   # Tailscale-only; curl http://127.0.0.1:8081/status.php
 
   6. Set up the CD pipeline (one-time, if /srv/nthncrtr-repo isn't already in place):
        a. Add the deploy-key pubkey (printed by step_deploy_key above) to the

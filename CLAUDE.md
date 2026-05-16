@@ -6,7 +6,7 @@ You are working in the version-controlled config + operational runbook for a sma
 
 | Host | Hostname | Role | OS / Arch | Services |
 |---|---|---|---|---|
-| **natto** | `natto` | Hub | Raspberry Pi, arm64, Debian 13 | Caddy (native, systemd), Pi-hole, Navidrome, Homepage, qBittorrent (behind Gluetun + Proton VPN) — all docker-managed compose projects |
+| **natto** | `natto` | Hub | Raspberry Pi, arm64, Debian 13 (migration to Beelink Mini S12 / x86_64 in progress — see `runbooks/migrate-natto.md`) | Caddy (native, systemd), Pi-hole, Navidrome, Homepage, qBittorrent (behind Gluetun + Proton VPN), Nextcloud (Tailscale-only; activates at the Beelink cutover) — all docker-managed compose projects |
 | **starmaya** | `kvass` (machine), `starmaya` (canonical) | Workshop appliance | Raspberry Pi, arm64, Debian 13 | `roaster-daemon` + `roaster-web` (Node.js, native systemd). On natto's tailnet as `kvass.tailaf7ea6.ts.net`. |
 | **workhorse** | `workhorse` | Client + dev | Intel Mac | Tailscale only — hosts no services. This is where you typically run from. |
 
@@ -23,7 +23,8 @@ External access flow: `*.nthncrtr.com` → Cloudflare DNS (DNS-01 challenge toke
 │   ├── natto.sh
 │   └── starmaya.sh
 ├── runbooks/                    # operational docs for non-routine procedures
-│   ├── migrate-natto.md         # cold migration to a replacement Pi
+│   ├── migrate-natto.md         # cold migration to a replacement host
+│   ├── migrate-off-gdrive.md    # one-time Google Drive → Nextcloud data move
 │   └── media-layout.md          # /mnt/media organization
 └── services/                    # per-service config, one dir each
     ├── caddy/                   # Caddyfile + caddy.service + build.sh
@@ -31,8 +32,9 @@ External access flow: `*.nthncrtr.com` → Cloudflare DNS (DNS-01 challenge toke
     ├── navidrome/               # docker-compose.yml
     ├── homepage/                # docker-compose.yml + config/ + secrets.env.example + .gitignore
     ├── qbittorrent/             # qBit + Gluetun (Proton VPN) sidecar
+    ├── nextcloud/               # NC + MariaDB + Redis + cron (Tailscale-only) + secrets.env.example
     ├── starmaya/                # systemd units + udev rule (deploys to kvass)
-    └── backup/                  # backup.sh + natto-backup.{service,timer}
+    └── backup/                  # backup.sh + nextcloud-data-sync.sh + their {service,timer}s
 ```
 
 On natto, deployed config lives at `/srv/<svc>/` with the compose file co-located beside its data (so relative `./data` paths in compose files work). The bootstrap script is what syncs `services/<svc>/docker-compose.yml` into place there.

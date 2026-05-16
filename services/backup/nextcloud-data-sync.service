@@ -1,0 +1,13 @@
+[Unit]
+Description=Weekly mirror of /srv/nextcloud/data to /mnt/media/backups/nextcloud-data/
+After=local-fs.target
+RequiresMountsFor=/mnt/media
+
+[Service]
+Type=oneshot
+ExecStart=/usr/local/sbin/nextcloud-data-sync
+Nice=10
+IOSchedulingClass=idle
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=nextcloud-data-sync

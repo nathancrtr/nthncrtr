@@ -26,10 +26,13 @@ export GOOS=linux
 export GOARCH="$ARCH"
 [ "$ARCH" = arm64 ] && export GOARM64=v8.0
 
+# xcaddy has no --with-build-flag (never did); extra `go build` flags are
+# passed through this env var. -trimpath for reproducible paths; the -tags
+# drop modules we don't compile in (matches the tags in the header).
+export XCADDY_GO_BUILD_FLAGS="-trimpath -tags=nobadger,nomysql,nopgx"
+
 xcaddy build "${CADDY_VERSION}" \
-	--with "github.com/caddy-dns/cloudflare@${CLOUDFLARE_VERSION}" \
-	--with-build-flag="-trimpath" \
-	--with-build-flag="-tags=nobadger,nomysql,nopgx"
+	--with "github.com/caddy-dns/cloudflare@${CLOUDFLARE_VERSION}"
 
 echo
 echo "Built ./caddy. Verify with: ./caddy version"

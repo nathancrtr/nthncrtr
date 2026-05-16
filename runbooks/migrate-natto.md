@@ -11,11 +11,50 @@ This is the first cross-arch run. The old natto is a Raspberry Pi (arm64); the n
 
 The 5TB USB drive is exfat (cross-platform, cross-arch). It physically unplugs from the Pi and replugs into the Beelink. Its UUID stays the same so the existing `/etc/fstab` line is portable.
 
+### Host already prepared on 2026-05-16 (read this before § 1)
+
+The Beelink was racked, Ubuntu Server installed, and networked in a prior
+session. State the next session inherits:
+
+- **OS:** Ubuntu Server 26.04 LTS amd64, installed from USB. Disk wiped
+  whole, **no LVM** (single ESP + ext4 root), Windows gone. User `nthncrtr`
+  (UID 1000), hostname `natto`, OpenSSH enabled.
+- **BIOS gotcha (only matters if you re-image):** the Beelink's monitor
+  never displays POST/BIOS — it sleeps through the low-res firmware video
+  mode. **Plugging into a TV instead of the monitor** shows BIOS fine; that
+  is how the boot order was changed. Blind-spamming `Delete` from power-on
+  also reaches the static AMI setup screen. Don't burn time on PXE/WSL2/etc.
+- **Networking — important:** the Ubuntu installer ran over **wifi**, so it
+  wrote a wifi-only netplan; the wired NIC was defined but had no `dhcp4`.
+  GFiber's UI exposes **no DHCP reservations**, so the wired NIC is pinned
+  with a **static IP in netplan**: `enp1s0` → **`192.168.1.240/24`**, gw
+  `192.168.1.1`, DNS `192.168.1.1` + `1.1.1.1`. Wifi (`wlp2s0`, currently
+  `.147` via DHCP) is intentionally left up as a **fallback** — drop it at
+  cutover (see § 9). The static config lives in
+  `/etc/netplan/00-installer-config.yaml`; a `.bak` of the installer's
+  original is beside it.
+- **Reaching it from kraut (the Mac, aka `workhorse`):** SSH alias
+  **`natto-new`** → `192.168.1.240`, user `nthncrtr`, key `id_ed25519`
+  (already authorized). Kept as a *separate* alias from `natto` (old Pi via
+  `natto.local`) deliberately, to avoid a host-key clash until cutover —
+  see § 7/§ 9 for the `ssh-keygen -R` step when you fold it back.
+- **sudo needs a password.** An interactive Ubuntu install does **not**
+  grant passwordless sudo (the headless autoinstall would have, but we
+  didn't use it). This runbook is `sudo`-heavy and most of it is meant to
+  run *on the host* — so **`ssh -t natto-new` and work in an interactive
+  shell**, don't `ssh natto-new sudo …` (no TTY → sudo fails, exactly the
+  old-natto constraint in CLAUDE.md § "Sudo on natto from workhorse"). For
+  multi-step sudo blocks, the clipboard-paste pattern from CLAUDE.md works
+  here too.
+- **Bare-line speed verified:** 737↓ / 493↑ Mbit/s, Google Fiber, no caps,
+  0.6 ms LAN, 13 ms RTT — ample for the seedbox role. Real seed ceiling is
+  gated by Proton, not the line; that check stays in § 8.6.
+
 ## Prerequisites
 
 - **New hardware:** Beelink Mini S12 (or any x86_64 box with ≥4GB RAM, ≥120GB internal storage, USB 3.x for the 5TB drive). The old host was a Pi 4 — match arch to the binaries in the backup tarball only if you want to skip the cross-arch caveats in § 5.
-- **OS image:** Debian 13 (trixie) amd64 net-installer, or Ubuntu Server LTS 24.04 amd64. Set hostname to `natto`, enable SSH, create the `nthncrtr` user (UID 1000) before first boot.
-- **Network:** wired ethernet to the same LAN as the old natto. Tailscale auth key from <https://login.tailscale.com/admin/settings/keys> (one-off, reusable for the cutover).
+- **OS image:** Debian 13 (trixie) amd64 net-installer, or Ubuntu Server LTS amd64. Set hostname to `natto`, enable SSH, create the `nthncrtr` user (UID 1000) before first boot. *(For the 2026-05 run this is already done — Ubuntu Server 26.04 LTS — see "Host already prepared" above.)*
+- **Network:** wired ethernet to the same LAN as the old natto. *(2026-05: the wired NIC is static `192.168.1.240` because GFiber exposes no DHCP reservations — see "Host already prepared". Confirm `ip -br -4 addr` still shows `enp1s0` at `.240` before starting.)* Tailscale auth key from <https://login.tailscale.com/admin/settings/keys> (one-off, reusable for the cutover).
 - **Backup tarball:** the most recent `/mnt/media/backups/natto-YYYY-MM-DD.tgz` from old natto (the daily `natto-backup.timer` produces these). Two ways to get it onto the new host:
   - *(preferred, no copy)* Leave it on the 5TB drive. After the drive is unplugged from old natto and plugged into the Beelink, the tarball is at `/mnt/media/backups/natto-YYYY-MM-DD.tgz` directly.
   - *(if you can't move the drive yet)* `scp old-natto:/mnt/media/backups/natto-latest.tgz new-natto:/tmp/`.
@@ -44,9 +83,10 @@ Don't shut anything down yet — old natto keeps serving DNS + the rest of the h
 
 ### 1. Clone the repo on the new host
 
-The repo lives at `/srv/nthncrtr-repo` on natto (created by the UID-1000 user, used by `deploy.sh`).
+The repo lives at `/srv/nthncrtr-repo` on natto (created by the UID-1000 user, used by `deploy.sh`). Work from an interactive shell on the host — `ssh -t natto-new` — so sudo can prompt (see "Host already prepared"):
 
 ```sh
+ssh -t natto-new
 sudo install -d -o nthncrtr -g nthncrtr /srv
 sudo -u nthncrtr git clone https://github.com/<owner>/nthncrtr.git /srv/nthncrtr-repo
 cd /srv/nthncrtr-repo
@@ -264,6 +304,21 @@ sudo poweroff
 ```
 
 Keep the old SD card around for a week before re-flashing — it's your last-resort rollback. Once Tailscale's old identity is released (it logs out cleanly above), the new host can be renamed from `natto-1` back to `natto` in the Tailscale admin console if needed.
+
+**Fold the new host back to the `natto` identity (2026-05):** the migration
+ran with the box as the `natto-new` SSH alias on its own host key to avoid a
+clash with the old Pi (`natto` → `natto.local`). Once the old host is
+powered off and re-flashed:
+
+- On kraut: `ssh-keygen -R natto.local` (and the old Pi's IP if cached),
+  then repoint the `natto` SSH-config block's `HostName` to `192.168.1.240`
+  and retire the `natto-new` block.
+- **Drop the wifi fallback.** It was kept up only as a safety net during
+  prep. A household DNS/seedbox hub silently failing over to wifi is the
+  fragility this runbook exists to avoid. On the new host, remove the
+  `wifis:` block from `/etc/netplan/00-installer-config.yaml` (leaving the
+  static `enp1s0` stanza), `sudo netplan try`, confirm, and verify the
+  default route still rides `enp1s0` at `192.168.1.240`.
 
 ## Alternative: in-place rsync (if you can't move the drive yet)
 

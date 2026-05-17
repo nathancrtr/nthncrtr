@@ -43,7 +43,11 @@ services:
       - TZ=America/New_York
       - X_AUTHELIA_CONFIG=/config/configuration.yml
     healthcheck:
-      test: ["CMD", "authelia", "healthcheck"]
+      # Authelia 4.39 has NO `authelia healthcheck` subcommand; the image
+      # ships /usr/bin/wget and exposes an unauthenticated /api/health → 200.
+      # Hitting that is the version-stable liveness probe. (The old
+      # `authelia healthcheck` → "unknown command" → perpetual `unhealthy`.)
+      test: ["CMD", "wget", "-q", "-O", "/dev/null", "http://localhost:9091/api/health"]
       interval: 30s
       timeout: 5s
       retries: 5

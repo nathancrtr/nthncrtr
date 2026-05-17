@@ -35,9 +35,9 @@ cd /srv/pihole && sudo docker compose restart pihole
 
 | Hostname | LAN IP | Why |
 |---|---|---|
-| `natto.nthncrtr.com` | `192.168.1.50` | LAN-only devices (smart TV, Chromecast receivers, anything that can't run Tailscale) can't route to natto's Tailscale IP. With this override they reach Caddy on the LAN; SNI matches so the existing Let's Encrypt cert still verifies. |
+| `music.nthncrtr.com` | `192.168.1.50` | LAN-only devices (smart TV, Chromecast receivers, anything that can't run Tailscale) can't route to natto's Tailscale IP. With this override they reach Caddy on the LAN; SNI matches so the existing Let's Encrypt cert still verifies. (Was `natto.nthncrtr.com` until the 2026-05-17 Navidrome rename — see WORKLIST 7.1.) |
 
-Stored in `pihole.toml` under `[dns].hosts`; visible in the web UI at **Settings → DNS → Local DNS Records**.
+Stored in `pihole.toml` under `[dns].hosts`; visible in the web UI at **Settings → DNS → Local DNS Records**. **This record is runtime state, not in the repo** — the 2026-05-17 rename requires the operator to update it via the UI (add `192.168.1.50 music.nthncrtr.com`, remove the old `natto.` row); the Caddyfile change alone does NOT migrate it, and stale split-horizon means LAN-only music clients break.
 
 ## Editing config — use the UI or CLI, never the file
 

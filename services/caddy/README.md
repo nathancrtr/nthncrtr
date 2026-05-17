@@ -40,7 +40,7 @@ Adding a route: edit `Caddyfile`, validate, push, reload.
 ## Routes today
 
 - `home.nthncrtr.com` → 127.0.0.1:3000 (Homepage)
-- `natto.nthncrtr.com` → tailnet:4533 (Navidrome)
+- `music.nthncrtr.com` → 127.0.0.1:4533 (Navidrome)
 - `pi-hole.nthncrtr.com` → 127.0.0.1:8053 (Pi-hole)
 - `torrent.nthncrtr.com` → tailnet:8080 (qBittorrent — stub, no container yet)
 - `starmaya.nthncrtr.com` → tailnet:8080 (roaster-web on kvass)

@@ -37,8 +37,10 @@ home.nthncrtr.com {
 	reverse_proxy 127.0.0.1:3000
 }
 
-# Music
-natto.nthncrtr.com {
+# Music — `music`, not `natto`: the hostname names the listening service,
+# not the box it runs on (natto is the hub host; conflating them confused
+# users). Function-named like home./torrent./play.; survives a server swap.
+music.nthncrtr.com {
 	reverse_proxy 127.0.0.1:4533
 }
 

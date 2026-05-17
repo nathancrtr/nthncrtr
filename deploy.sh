@@ -166,7 +166,7 @@ deploy_navidrome() {
   compose_up navidrome
   (( DRY_RUN )) && return 0
   sleep 3
-  verify_url https://natto.nthncrtr.com 200 || true
+  verify_url https://music.nthncrtr.com 200 || true
 }
 
 deploy_homepage() {

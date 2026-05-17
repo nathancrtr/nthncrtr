@@ -72,8 +72,9 @@ A record can live; know both:
   outage). **This is the preferred path** — it can't clobber other records.
   `play.nthncrtr.com → 192.168.1.240` was added here.
 - **`dns.hosts = [ … ]` in `/etc/pihole/pihole.toml`** — the v6 settings
-  file. The pre-existing `192.168.1.50 natto.nthncrtr.com` record lives
-  here (marked `### CHANGED`). Editing the toml directly needs a reload
+  file. The pre-existing `192.168.1.50 music.nthncrtr.com` record lives
+  here (marked `### CHANGED`; was `natto.nthncrtr.com` until the
+  2026-05-17 rename). Editing the toml directly needs a reload
   (`pihole reloaddns`) and risks clobbering the array if hand-edited —
   prefer the UI unless scripting.
 

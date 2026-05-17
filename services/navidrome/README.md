@@ -11,7 +11,7 @@ Music streaming server, scans music from the 5TB drive, serves a web UI + Subson
 | Music library | `/mnt/media/music/` (read-only mount in container) |
 | Container name | `navidrome-navidrome-1` |
 | Image | `deluan/navidrome:latest` |
-| Public URL | `https://natto.nthncrtr.com` |
+| Public URL | `https://music.nthncrtr.com` |
 | Internal port | 4533 |
 
 The container runs as `1000:1000` (the natto operator's UID/GID). `/mnt/media` is exfat, mounted with `uid=1000`, so file ownership inside the music dir matches.

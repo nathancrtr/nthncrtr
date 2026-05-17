@@ -394,7 +394,7 @@ Next steps (operator):
 
   5. Start docker services one at a time and verify each via its public URL:
        cd /srv/pihole       && docker compose up -d   # then dig @127.0.0.1 example.com
-       cd /srv/navidrome   && docker compose up -d   # then curl https://natto.nthncrtr.com/ping
+       cd /srv/navidrome   && docker compose up -d   # then curl https://music.nthncrtr.com/ping
        cd /srv/homepage    && docker compose up -d   # then curl https://home.nthncrtr.com
        cd /srv/qbittorrent && docker compose up -d   # then curl https://torrent.nthncrtr.com
        cd /srv/nextcloud   && docker compose up -d   # Tailscale-only; curl http://127.0.0.1:8081/status.php

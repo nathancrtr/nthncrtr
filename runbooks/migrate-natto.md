@@ -236,7 +236,7 @@ cd /srv/pihole && sudo docker compose up -d
 sleep 5 && dig @127.0.0.1 example.com    # should answer
 
 cd /srv/navidrome && sudo docker compose up -d
-sleep 5 && curl -fsSL -o /dev/null -w '%{http_code}\n' https://natto.nthncrtr.com/ping    # 200
+sleep 5 && curl -fsSL -o /dev/null -w '%{http_code}\n' https://music.nthncrtr.com/ping    # 200
 
 cd /srv/homepage && sudo docker compose up -d
 sleep 15 && curl -fsSL -o /dev/null -w '%{http_code}\n' https://home.nthncrtr.com    # 200

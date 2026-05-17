@@ -851,3 +851,40 @@ the Cloudflare Rate-Limiting rule in the dashboard if backing out the
 brute-force layer. Jellyfin's own data/accounts untouched. Restoring
 `services/ddns` or `services/fail2ban` is **not**
 part of rollback (it's obsolete regardless — the router path is dead).
+
+## Phase 7 — Housekeeping
+
+### 7.1 Rename Navidrome `natto.nthncrtr.com` → `music.nthncrtr.com`  [DONE — repo; operator Pi-hole step pending]
+
+`natto.nthncrtr.com` conflated the hub *host* (natto, the Beelink) with
+the music *service* — confusing. Operator decision: name it for the
+function, **`music`** (Navidrome's own web UI is the actual listening
+client, not just a Subsonic backend), consistent with `home.`/`torrent.`/
+`play.` and survives a future server swap.
+
+**Preconditions:** `*.nthncrtr.com` is a Cloudflare wildcard → no
+per-host public DNS change; old `natto.nthncrtr.com` falls through to
+Caddy's `:443 { abort }` once its vhost block is renamed.
+
+**Repo changes (done):** Caddyfile vhost `natto.` → `music.` (+ rationale
+comment); navidrome/caddy/jellyfin/pihole READMEs; `deploy.sh`
+`verify_url`; `bootstrap/natto.sh` + `runbooks/migrate-natto.md` curl
+checks. Historical `[DONE]` mission records left untouched (point-in-time
+record; `natto.` failing from outside is still true). `caddy adapt`
+validated.
+
+**Success criteria:** `https://music.nthncrtr.com/ping` → 200 after
+`deploy.sh caddy navidrome`; `https://natto.nthncrtr.com` → connection
+abort; LAN-only devices still reach it (see operator step).
+
+**Operator step (NOT a repo change — runtime Pi-hole state):** the
+split-horizon record `192.168.1.50 natto.nthncrtr.com` is in
+`pihole.toml`/`custom.list`, runtime-managed, not in the repo. Via Pi-hole
+**Settings → Local DNS Records**: add `192.168.1.50 music.nthncrtr.com`,
+remove the old `natto.` row. Until this is done, LAN-only music clients
+(smart TV, Chromecast) break — the Caddyfile rename alone does not migrate
+split-horizon.
+
+**Rollback:** revert this commit + `deploy.sh caddy navidrome`
+(adapt-gated); restore the old Pi-hole local record. Navidrome data
+untouched throughout.

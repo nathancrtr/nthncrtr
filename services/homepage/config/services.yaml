@@ -16,7 +16,7 @@
           version: 6
 
     - Navidrome:
-        href: https://natto.nthncrtr.com
+        href: https://music.nthncrtr.com
         icon: navidrome.png
         server: my-docker
         container: navidrome-navidrome-1

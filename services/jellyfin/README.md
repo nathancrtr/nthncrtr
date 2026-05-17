@@ -47,6 +47,40 @@ and you must reason about the other two:
 Cert issuance is unaffected: the global DNS-01 challenge doesn't need the
 host reachable on 443, so the non-standard `:8443` is a non-issue.
 
+#### Split-horizon: local DNS records on this Pi-hole (v6)
+
+The *inside* half is **not optional and not automatic** — without it an
+inside client resolves `play.nthncrtr.com` to the home WAN IP, bounces off
+the router (NAT hairpin), and the **router** (not Jellyfin, not Caddy)
+returns `Forbidden: Rejected request from RFC1918 IP to public server
+address`. That exact symptom = the split-horizon record is missing.
+
+This Pi-hole is **v6** (Core v6.x / FTL v6.x). v6 has *two* places a local
+A record can live; know both:
+
+- **`/etc/pihole/hosts/custom.list`** — what the web UI **Settings → Local
+  DNS Records** writes. Format: one `IP<space>name` per line. Saving via
+  the UI hot-reloads FTL automatically (no container restart, no DNS
+  outage). **This is the preferred path** — it can't clobber other records.
+  `play.nthncrtr.com → 192.168.1.240` was added here.
+- **`dns.hosts = [ … ]` in `/etc/pihole/pihole.toml`** — the v6 settings
+  file. The pre-existing `192.168.1.50 natto.nthncrtr.com` record lives
+  here (marked `### CHANGED`). Editing the toml directly needs a reload
+  (`pihole reloaddns`) and risks clobbering the array if hand-edited —
+  prefer the UI unless scripting.
+
+Both are **runtime state on natto, not in this repo.** They are captured by
+the nightly `/srv` backup (Pi-hole config lives under `/srv/pihole`), so a
+restore brings them back — but a **from-scratch natto rebuild without a
+backup restore loses split-horizon**, and the symptom is the router
+`Forbidden` above. Re-add per WORKLIST 6.6 step 3 after any such rebuild.
+
+Verify the record from natto:
+
+```sh
+dig +short play.nthncrtr.com @127.0.0.1   # must be natto's LAN IP, NOT the WAN IP
+```
+
 ### Hardening (this login now faces the internet)
 
 - **fail2ban** (`services/fail2ban`) bans brute-force source IPs at the

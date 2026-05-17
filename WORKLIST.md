@@ -747,9 +747,17 @@ exactly Jellyfin with zero retrofit to the other services.
 1. Provision `/srv/ddns/secrets.env` (Cloudflare token, Zone:DNS:Edit on
    nthncrtr.com only), mode 0600.
 2. `deploy.sh caddy jellyfin ddns fail2ban` on natto (caddy `adapt`-gated).
-3. Pi-hole local DNS `play.nthncrtr.com → <natto LAN IP>` + `pihole
-   reloaddns` (split-horizon; not a container restart, no DNS outage — but
-   announce per safety rule 1 before touching Pi-hole).
+3. Pi-hole (v6) split-horizon: add local A record `play.nthncrtr.com →
+   192.168.1.240` (natto LAN IP) via the admin UI **Settings → Local DNS
+   Records** (writes `/etc/pihole/hosts/custom.list`, hot-reloads FTL — not
+   a container restart, no DNS outage, so safety rule 1's stop/restart gate
+   does not apply; the pre-existing `natto.nthncrtr.com` record instead
+   lives in `pihole.toml dns.hosts`). Without this, inside clients bounce
+   off the router and get `Forbidden: Rejected request from RFC1918 IP to
+   public server address` — that exact message = this step is missing, NOT
+   a Jellyfin/Caddy fault. Verify: `dig +short play.nthncrtr.com
+   @127.0.0.1` on natto returns the LAN IP, not the WAN IP. Full mechanism
+   in `services/jellyfin/README.md` § "Split-horizon".
 4. Cloudflare: A record `play` → home WAN IP, **proxy OFF (grey
    cloud)**; confirm no wildcard/more-specific record shadows it.
    **Also delete the interim `jellyfin` A record** (ID

@@ -740,8 +740,8 @@ Caddy `:443` → Jellyfin (no Cloudflare round-trip for local 4k). One
 **Brute-force under a tunnel:** attackers hit Cloudflare, never natto, so
 host-firewall fail2ban is useless. `services/fail2ban` keeps the jail but
 its ban action is **`cloudflare-token`** — bans land in a Cloudflare IP
-Access Rule at the edge. Needs a CF API token (Account Filter Lists: Edit +
-Zone:Read), gitignored `.local`.
+Access Rule at the edge. Needs a CF API token (Zone → Firewall Services →
+Edit on nthncrtr.com) + the zone ID, in a gitignored `.local`.
 
 **Preconditions:**
 - Repo clean; 6.2 (Jellyfin standup) DONE.
@@ -780,7 +780,8 @@ Zone:Read), gitignored `.local`.
    play.nthncrtr.com` (creates the proxied CNAME).
 4. fail2ban token: provide
    `/srv/fail2ban/config/fail2ban/action.d/cloudflare-token.local` (0600,
-   CF token = Account Filter Lists:Edit + Zone:Read on nthncrtr.com).
+   `cftoken` = token scoped Zone→Firewall Services→Edit on nthncrtr.com,
+   plus `cfzone` = the nthncrtr.com Zone ID).
 5. Pi-hole (v6) split-horizon: local A record `play.nthncrtr.com →
    192.168.1.240` via admin UI **Settings → Local DNS Records** (writes
    `/etc/pihole/hosts/custom.list`, hot-reloads FTL — not a container

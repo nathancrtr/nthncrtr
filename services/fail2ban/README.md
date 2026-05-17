@@ -44,18 +44,24 @@ sudo install -o root -g root -m 0600 /dev/stdin \
   /srv/fail2ban/config/fail2ban/action.d/cloudflare-token.local <<'EOF'
 [Init]
 cftoken = <the API token>
+cfzone  = <nthncrtr.com Zone ID>
 EOF
 docker restart fail2ban
 ```
 
-Confirm the exact `[Init]` param name your image expects first:
+The shipped action (`docker exec fail2ban cat
+/etc/fail2ban/action.d/cloudflare-token.conf`) calls
+`POST/GET .../zones/<cfzone>/firewall/access_rules/rules` with
+`Authorization: Bearer <cftoken>`, so it needs **both**:
 
-```sh
-docker exec fail2ban cat /etc/fail2ban/action.d/cloudflare-token.conf
-```
+- **`cftoken`** — API token, scope **Zone → Firewall Services → Edit** on
+  Specific zone `nthncrtr.com` (this is the "IP Access Rules" permission;
+  *not* Account Filter Lists — a different API this action doesn't use).
+- **`cfzone`** — the `nthncrtr.com` **Zone ID** (Cloudflare dashboard →
+  nthncrtr.com → Overview → "Zone ID"). Not secret, but required by the
+  action's URL.
 
-Token scope (dash.cloudflare.com → API Tokens): **Account → Account Filter
-Lists → Edit** + **Zone → Zone → Read** on `nthncrtr.com`. Nothing else.
+Nothing else.
 fail2ban auto-merges `*.local` over the stock `*.conf`, so the `.local`
 only supplies the secret. It is gitignored (`*.local`); never commit it.
 

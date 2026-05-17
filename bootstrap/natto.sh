@@ -274,6 +274,13 @@ step_srv() {
   # read-only) and is not created here.
   install -d -o "$(getent passwd 1000 | cut -d: -f1)" \
               -g "$(getent group  1000 | cut -d: -f1)" -m 0755 /srv/jellyfin
+  # ddns + fail2ban exist only because Jellyfin is public (WORKLIST 6.6).
+  # Both root-owned: cloudflare-ddns just needs the compose + secrets.env;
+  # fail2ban runs as root and writes its state under config/.
+  install -d -o root -g root -m 0755 /srv/ddns
+  install -d -o root -g root -m 0755 /srv/fail2ban
+  install -d -o root -g root -m 0755 /srv/fail2ban/config/fail2ban/filter.d
+  install -d -o root -g root -m 0755 /srv/fail2ban/config/fail2ban/jail.d
 
   # Copy compose files (root-owned, world-readable so the docker group user
   # can `docker compose ...` against them).
@@ -295,6 +302,16 @@ step_srv() {
     "$REPO_ROOT/services/nextcloud/docker-compose.yml"   /srv/nextcloud/docker-compose.yml
   install -o root -g root -m 0644 \
     "$REPO_ROOT/services/jellyfin/docker-compose.yml"    /srv/jellyfin/docker-compose.yml
+  install -o root -g root -m 0644 \
+    "$REPO_ROOT/services/ddns/docker-compose.yml"        /srv/ddns/docker-compose.yml
+  install -o root -g root -m 0644 \
+    "$REPO_ROOT/services/fail2ban/docker-compose.yml"    /srv/fail2ban/docker-compose.yml
+  install -o root -g root -m 0644 \
+    "$REPO_ROOT/services/fail2ban/config/fail2ban/filter.d/jellyfin.conf" \
+    /srv/fail2ban/config/fail2ban/filter.d/jellyfin.conf
+  install -o root -g root -m 0644 \
+    "$REPO_ROOT/services/fail2ban/config/fail2ban/jail.d/jellyfin.conf" \
+    /srv/fail2ban/config/fail2ban/jail.d/jellyfin.conf
 }
 
 # ---------------------------------------------------------------------------
@@ -353,6 +370,19 @@ Next steps (operator):
           export WEBPASSWORD=... in the compose environment before bringing it up.
        c. /srv/nextcloud/secrets.env — MariaDB + Nextcloud admin creds, mode
           0600. See services/nextcloud/secrets.env.example.
+       d. /srv/ddns/secrets.env — Cloudflare token (Zone:DNS:Edit on
+          nthncrtr.com ONLY), mode 0600. See services/ddns/secrets.env.example.
+
+  2b. Public Jellyfin (the ONE internet-exposed service — WORKLIST 6.6):
+       - Home router: port-forward WAN tcp/443 → natto-LAN-IP:8443
+         (NOT :443 — forwarding :443 exposes every Caddy vhost).
+       - Cloudflare DNS: add A record jellyfin → home WAN IP, proxy OFF
+         (grey cloud). cloudflare-ddns keeps it current thereafter.
+       - Pi-hole: add local DNS jellyfin.nthncrtr.com → natto LAN IP
+         (split-horizon; dodges NAT hairpin for inside clients).
+       - Jellyfin UI → Dashboard → Networking → Known proxies = 127.0.0.1
+         (REQUIRED, or fail2ban bans 127.0.0.1 instead of attackers).
+         Create per-user accounts; UPnP port-mapping OFF.
 
   3. Restore service data from the latest /mnt/media/backups/natto-*.tgz tarball
      into /srv/{pihole,navidrome,homepage}/. (See runbooks/migrate-natto.md.)

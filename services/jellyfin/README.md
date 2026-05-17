@@ -2,8 +2,11 @@
 
 Local media server for the video library on the 5TB drive. One container
 (`lscr.io/linuxserver/jellyfin`), no database sidecar (Jellyfin embeds
-SQLite). **Tailscale-only / LAN** — there is no `jellyfin.nthncrtr.com`, no
-Caddyfile block, and nothing at the DNS cutover step of a host migration.
+SQLite). **This is the one deliberately internet-exposed service** (trusted
+users, per-user Jellyfin accounts — operator decision, WORKLIST 6.6).
+Everything else on natto stays tailnet-only; the scoping that keeps it that
+way is described under *Reachability* below — read it before touching the
+Caddyfile or the router.
 
 ## Where things live
 
@@ -16,7 +19,50 @@ Caddyfile block, and nothing at the DNS cutover step of a host migration.
 | Container | `jellyfin` |
 | Image | `lscr.io/linuxserver/jellyfin:latest` |
 | Host port | `8096` → `8096` (+ `7359/udp` LAN discovery) |
-| Reachability | **Tailscale-only / LAN** — `http://natto:8096`, `http://natto.tailaf7ea6.ts.net:8096` |
+| Reachability | **Public** at `https://jellyfin.nthncrtr.com` (one URL, inside + out); raw `http://natto:8096` / tailnet still work |
+
+### How "public, but only Jellyfin" actually works
+
+This is the only `*.nthncrtr.com` name reachable from the internet. The
+containment is deliberate and lives in three coupled places — change one
+and you must reason about the other two:
+
+1. **Caddy** (`services/caddy/Caddyfile`): the block is
+   `jellyfin.nthncrtr.com:443, jellyfin.nthncrtr.com:8443`. `:8443` is a
+   dedicated listener; every other vhost is `:443` only. **No
+   `import authelia`** — forward_auth breaks Jellyfin's native TV/phone
+   clients (WORKLIST 6.4/6.6).
+2. **Router** (operator-managed, not in repo): port-forwards WAN `tcp/443`
+   → `natto-LAN-IP:8443`. Because only `:8443` is forwarded and only the
+   Jellyfin block listens there, **only Jellyfin is exposed**. Forwarding
+   `:443` instead would put Navidrome / Pi-hole / the *arrs / roaster on
+   the internet — do not.
+3. **DNS, split-horizon**:
+   - *Outside* — Cloudflare A record `jellyfin` → home WAN IP (grey-cloud,
+     proxy off), kept current by `services/ddns`.
+   - *Inside* — Pi-hole local DNS `jellyfin.nthncrtr.com` → natto LAN IP,
+     so inside clients hit the `:443` listener directly and don't depend
+     on router NAT hairpin. One `PublishedServerUrl` works both ways.
+
+Cert issuance is unaffected: the global DNS-01 challenge doesn't need the
+host reachable on 443, so the non-standard `:8443` is a non-issue.
+
+### Hardening (this login now faces the internet)
+
+- **fail2ban** (`services/fail2ban`) bans brute-force source IPs at the
+  host firewall. It is only useful once Jellyfin's **Known proxies =
+  `127.0.0.1`** is set (Dashboard → Networking) so the auth log carries
+  the real client IP instead of Caddy's `127.0.0.1`. **Required step.**
+- **Per-user accounts**, each non-admin where appropriate, library access
+  scoped, Downloads/Live-TV/management off as desired. Strong password on
+  *every* account including admin.
+- Dashboard → Networking → **disable UPnP automatic port mapping** (the
+  router forward is explicit; don't let Jellyfin punch its own).
+- Keep the image current (`docker compose pull`) — CVE exposure now
+  matters; this is a public service.
+- Layer-2 (follow-up, not shipped): add `caddy-ratelimit` to
+  `services/caddy/build.sh` to throttle `/Users/AuthenticateByName` at the
+  edge. Tracked in WORKLIST 6.6.
 
 ### Why config on internal disk, not the 5TB
 
@@ -26,10 +72,12 @@ UUID-stable — see `runbooks/migrate-natto.md`). Same reasoning as Nextcloud.
 Only `config/` and `cache/` live on the Beelink's internal ext4; the media
 itself stays on `/mnt/media/video` and is bind-mounted **read-only**.
 
-### Why no Caddy / Cloudflare route
+### History: it used to be Tailscale-only
 
-Deliberate, decided with the operator: local streaming only, same posture as
-Nextcloud. Reachable on the tailnet and LAN, not the public internet.
+Through WORKLIST 6.2 Jellyfin was Tailscale-only / LAN (same posture as
+Nextcloud, which still is). WORKLIST 6.6 changed that to public-for-trusted-
+users via the router-port-forward model above. Nextcloud did **not** change
+— it remains Tailscale-only with no Caddy/Cloudflare route.
 
 ## Hardware transcoding (Intel QuickSync)
 
@@ -45,6 +93,10 @@ all in software) pegs the N95's 4 cores at ~350% CPU and buffers within
 seconds — it *looks* like a network problem but is 100% CPU. The LG webOS
 client (and most TV-native apps) can't decode TrueHD/Atmos or take HDR HEVC
 untouched, so they force this transcode; QSV is what makes it real-time.
+**This matters more now that Jellyfin is public:** a remote client on a
+constrained uplink is *more* likely to force a transcode (resolution/bitrate
+down-scaling on top of the codec/HDR reasons), so verify QSV actually
+engages for a remote 4k playback, not just a LAN one.
 
 ### The config is NOT in this repo — it must be re-applied on a rebuild
 
@@ -114,6 +166,9 @@ and is not duplicated by this service (it is read-only here).
 
 ## Activation status
 
-Stood up alongside the Nextcloud activation after the Pi → Beelink
-migration. Comes up via `bootstrap/natto.sh` + `deploy.sh jellyfin`. See
-WORKLIST Phase 6.
+Stood up Tailscale-only alongside Nextcloud after the Pi → Beelink
+migration (WORKLIST 6.2). Made public-for-trusted-users in WORKLIST 6.6
+(Caddy `:8443` route + `services/ddns` + `services/fail2ban` + router
+port-forward + Cloudflare/Pi-hole split-horizon). Comes up via
+`bootstrap/natto.sh` + `deploy.sh jellyfin ddns fail2ban`; the router /
+Cloudflare / Known-proxies steps are operator actions (see WORKLIST 6.6).

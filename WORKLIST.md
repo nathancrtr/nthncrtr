@@ -700,3 +700,73 @@ episodes (or Manual Import the hand-grabbed season pack already in
 
 **Rollback:** `git revert` — documentation + one benign `warn` in
 `deploy.sh`; no service config or state changed.
+
+### 6.6 Jellyfin → public for trusted users  [NEW — repo scaffolding committed; activation pending operator]
+
+Make Jellyfin reachable from a friend's own home, with their own per-user
+Jellyfin account. Operator decisions captured: **router port-forward**
+ingress (not tailnet-share / Funnel / Cloudflare Tunnel); **dedicated Caddy
+`:8443` listener** so ONLY Jellyfin is exposed (Navidrome/Pi-hole/*arrs/
+roaster stay tailnet-only, untouched); **per-user accounts**; **no Authelia
+on Jellyfin** (forward_auth breaks native TV/phone clients — consistent with
+6.4's exclusion). DDNS and fail2ban brought into scope explicitly.
+
+**Why the dedicated port:** Caddy serves every vhost on one `:443` listener.
+Forwarding WAN `443→443` would expose all of them, and 6.4 chose Authelia
+`one_factor` *because* services sat behind Tailscale — an assumption a naive
+port-forward deletes. The `:8443`-only forward keeps the blast radius to
+exactly Jellyfin with zero retrofit to the other services.
+
+**Preconditions:**
+- Repo clean; 6.2 (Jellyfin standup) DONE.
+- Operator has router admin access and Cloudflare DNS access for the zone.
+
+**Success criteria (repo side — this mission's committed scope):**
+- `services/caddy/Caddyfile`: `jellyfin.nthncrtr.com:443,
+  jellyfin.nthncrtr.com:8443 → 127.0.0.1:8096`, no `import authelia`;
+  `caddy adapt` passes.
+- `services/jellyfin/docker-compose.yml`: `PublishedServerUrl =
+  https://jellyfin.nthncrtr.com`; header rewritten.
+- `services/ddns/` scaffolded (favonia/cloudflare-ddns; compose +
+  secrets.env.example + .gitignore + README), wired into `deploy.sh`
+  (default set) + `bootstrap/natto.sh`.
+- `services/fail2ban/` scaffolded (lscr.io/linuxserver/fail2ban; compose +
+  jail.d/filter.d jellyfin rules + README + selective .gitignore), wired
+  into `deploy.sh` (default set) + `bootstrap/natto.sh`.
+- Doc drift fixed: `services/jellyfin/README.md`, CLAUDE.md arch table +
+  new safety rule 8.
+
+**Operator steps (outside the repo — NOT done by this mission):**
+1. Provision `/srv/ddns/secrets.env` (Cloudflare token, Zone:DNS:Edit on
+   nthncrtr.com only), mode 0600.
+2. `deploy.sh caddy jellyfin ddns fail2ban` on natto (caddy `adapt`-gated).
+3. Pi-hole local DNS `jellyfin.nthncrtr.com → <natto LAN IP>` + `pihole
+   reloaddns` (split-horizon; not a container restart, no DNS outage — but
+   announce per safety rule 1 before touching Pi-hole).
+4. Cloudflare: A record `jellyfin` → home WAN IP, **proxy OFF (grey
+   cloud)**; confirm no wildcard/more-specific record shadows it.
+5. Router: port-forward WAN `tcp/443` → `<natto LAN IP>:8443` (NOT :443).
+6. Jellyfin UI: **Known proxies = `127.0.0.1`** (required for fail2ban),
+   disable UPnP port-mapping, create the friend's non-admin per-user
+   account, strong passwords on all accounts.
+7. Verify: inside `https://jellyfin.nthncrtr.com` (valid cert, login);
+   outside (cellular) friend streams a title; **QSV engages for a remote
+   4k transcode** (services/jellyfin/README.md); **negative test** —
+   `pi-hole.nthncrtr.com` / `natto.nthncrtr.com` must FAIL from outside;
+   `df -h /`.
+
+**Follow-up (tracked, not in scope):** add `mholt/caddy-ratelimit` to
+`services/caddy/build.sh` for edge throttling of the Jellyfin auth endpoint
+(layer-2 over fail2ban's layer-1). Requires a Caddy rebuild + binary
+redeploy.
+
+**Outcome:** Repo scaffolding committed (Caddyfile, jellyfin compose,
+services/ddns, services/fail2ban, deploy.sh, bootstrap, docs). Activation
+(steps 1–7) is pending operator — nothing public until the router forward +
+Cloudflare record exist. `caddy adapt` validated against natto pre-commit.
+
+**Rollback:** revert the Caddyfile jellyfin block + `deploy.sh caddy`
+(adapt-gated; Jellyfin drops back to tailnet-only). Remove the router
+forward + Cloudflare record to de-expose immediately (faster than a repo
+revert). `docker compose down` in /srv/{ddns,fail2ban} — both independent,
+zero impact on other services. Jellyfin's own data/accounts untouched.

@@ -1,13 +1,21 @@
 # Jellyfin — local media server for the video library. Managed by deploy.sh
 # (sudo ./deploy.sh jellyfin).
 #
-# Reachability: Tailscale-only / LAN by design — same posture as Nextcloud.
-# There is deliberately NO Caddyfile route and NO Cloudflare DNS entry. It is
-# reached at:
-#   http://natto:8096                       (LAN)
-#   http://natto.tailaf7ea6.ts.net:8096     (tailnet)
-# 8096 is Jellyfin's default HTTP port and is free on natto (8080 = gluetun,
-# 8081 = nextcloud, 8053 = pihole admin).
+# Reachability: the ONE deliberately internet-exposed service (trusted users,
+# per-user accounts — operator decision, WORKLIST 6.6). Reached at:
+#   https://jellyfin.nthncrtr.com           (public AND inside, single URL)
+#   http://natto:8096                       (LAN, raw — still works)
+#   http://natto.tailaf7ea6.ts.net:8096     (tailnet, raw — still works)
+# Public path: home-router WAN 443 → natto:8443 → the Caddy
+# `jellyfin.nthncrtr.com:8443` block (services/caddy/Caddyfile) → here. NO
+# Authelia on this route (forward_auth breaks native TV/phone clients —
+# WORKLIST 6.4/6.6); Jellyfin's own accounts + the fail2ban jail
+# (services/fail2ban) are the only barrier. Caddy is :8443-scoped so ONLY
+# Jellyfin is public; every other vhost stays tailnet-only. Inside clients
+# resolve the same hostname via Pi-hole split-horizon (→ natto LAN IP, the
+# :443 listener) to avoid NAT hairpin. 8096 is Jellyfin's default HTTP port,
+# free on natto (8080 = gluetun, 8081 = nextcloud, 8053 = pihole admin,
+# 8443 = the Jellyfin public listener in Caddy).
 #
 # Data layout on natto (config/cache on the Beelink's internal ext4 — the
 # media itself stays on the exfat 5TB, mounted read-only):
@@ -40,8 +48,11 @@ services:
       - PUID=1000
       - PGID=1000
       - TZ=America/New_York
-      # So clients on the tailnet/LAN get a correct absolute base URL.
-      - JELLYFIN_PublishedServerUrl=http://natto.tailaf7ea6.ts.net:8096
+      # Absolute base URL handed to clients. One value works inside AND out
+      # because Pi-hole split-horizon resolves this hostname to natto's LAN
+      # IP for inside clients and Cloudflare resolves it to the home WAN IP
+      # for outside clients — both terminate at the same Caddy jellyfin block.
+      - JELLYFIN_PublishedServerUrl=https://jellyfin.nthncrtr.com
     volumes:
       - ./config:/config
       - ./cache:/cache

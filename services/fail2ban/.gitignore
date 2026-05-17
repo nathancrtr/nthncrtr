@@ -1,0 +1,13 @@
+# The fail2ban container writes runtime state into config/ on natto
+# (fail2ban.sqlite3, the image's generated jail.local, action.d/, logs).
+# Only our two hand-written rule files are version-controlled; everything
+# else under config/ is container-generated and must never be committed.
+config/*
+!config/fail2ban/
+config/fail2ban/*
+!config/fail2ban/filter.d/
+!config/fail2ban/jail.d/
+config/fail2ban/filter.d/*
+config/fail2ban/jail.d/*
+!config/fail2ban/filter.d/jellyfin.conf
+!config/fail2ban/jail.d/jellyfin.conf

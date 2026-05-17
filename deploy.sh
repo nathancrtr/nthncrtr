@@ -11,8 +11,11 @@
 # One-time bootstrap (not handled here): git clone this repo to
 # /srv/nthncrtr-repo and put a read-only deploy key at /root/.ssh/.
 #
-# Services: caddy navidrome homepage backup qbittorrent radarr sonarr prowlarr nextcloud jellyfin authelia pihole starmaya
-# Default (no service args): caddy navidrome homepage backup qbittorrent radarr sonarr prowlarr nextcloud jellyfin
+# Services: caddy navidrome homepage backup qbittorrent radarr sonarr prowlarr nextcloud jellyfin ddns fail2ban authelia pihole starmaya
+# Default (no service args): caddy navidrome homepage backup qbittorrent radarr sonarr prowlarr nextcloud jellyfin ddns fail2ban
+#   — ddns/fail2ban exist only because Jellyfin is public (WORKLIST 6.6):
+#     ddns keeps jellyfin.nthncrtr.com on the WAN IP, fail2ban guards its
+#     login. Both default-on; harmless before their secrets are provisioned.
 #   — pihole is gated behind --yes-pihole (DNS outage for ~30s).
 #   — starmaya must be requested explicitly (deploys to kvass over ssh).
 #   — authelia must be requested explicitly (the SSO gate; deploy it
@@ -33,8 +36,8 @@ usage() {
   cat <<'EOF'
 Usage: sudo ./deploy.sh [--dry-run] [--yes-pihole] [services...]
 
-Services: caddy navidrome homepage backup qbittorrent radarr sonarr prowlarr nextcloud jellyfin pihole starmaya
-Default (no service args): caddy navidrome homepage backup qbittorrent radarr sonarr prowlarr nextcloud jellyfin
+Services: caddy navidrome homepage backup qbittorrent radarr sonarr prowlarr nextcloud jellyfin ddns fail2ban pihole starmaya
+Default (no service args): caddy navidrome homepage backup qbittorrent radarr sonarr prowlarr nextcloud jellyfin ddns fail2ban
 EOF
   exit "${1:-0}"
 }
@@ -52,7 +55,7 @@ done
 
 SERVICES=("$@")
 if [[ ${#SERVICES[@]} -eq 0 ]]; then
-  SERVICES=(caddy navidrome homepage backup qbittorrent radarr sonarr prowlarr nextcloud jellyfin)
+  SERVICES=(caddy navidrome homepage backup qbittorrent radarr sonarr prowlarr nextcloud jellyfin ddns fail2ban)
   (( YES_PIHOLE )) && SERVICES+=(pihole)
 fi
 
@@ -330,8 +333,64 @@ deploy_jellyfin() {
   fi
   compose_up jellyfin
   sleep 5
-  # Tailscale-only: no public URL. /health answers 200 "Healthy" once up.
+  # /health answers 200 "Healthy" once up (works on 127.0.0.1 regardless of
+  # the public route). The public path is verified out-of-band — see
+  # services/jellyfin/README.md (it depends on the router port-forward +
+  # Cloudflare record, which deploy.sh cannot assert).
   verify_url http://127.0.0.1:8096/health 200 || true
+}
+
+deploy_ddns() {
+  log "ddns"
+  local CHANGED=0
+  (( DRY_RUN )) || {
+    [[ -d /srv/ddns ]] || { install -d -o root -g root -m 0755 /srv/ddns; note "created /srv/ddns"; }
+  }
+  install_file "$REPO_ROOT/services/ddns/docker-compose.yml" /srv/ddns/docker-compose.yml
+  (( DRY_RUN )) && return 0
+  if [[ ! -f /srv/ddns/secrets.env ]]; then
+    warn "/srv/ddns/secrets.env not found — see services/ddns/secrets.env.example"
+    warn "cloudflare-ddns starts but cannot update jellyfin.nthncrtr.com until the token is provided."
+  fi
+  compose_up ddns
+  sleep 3
+  # No URL/health endpoint; the recent log is the liveness + correctness signal
+  # (it prints the detected WAN IP and any record update).
+  docker logs --tail 3 cloudflare-ddns 2>&1 | sed 's/^/    /' || \
+    warn "no cloudflare-ddns logs yet — check 'docker logs cloudflare-ddns'"
+}
+
+deploy_fail2ban() {
+  log "fail2ban"
+  local CHANGED=0
+  (( DRY_RUN )) || {
+    [[ -d /srv/fail2ban ]] || { install -d -o root -g root -m 0755 /srv/fail2ban; note "created /srv/fail2ban"; }
+    install -d -o root -g root -m 0755 /srv/fail2ban/config/fail2ban/filter.d
+    install -d -o root -g root -m 0755 /srv/fail2ban/config/fail2ban/jail.d
+  }
+  install_file "$REPO_ROOT/services/fail2ban/docker-compose.yml" /srv/fail2ban/docker-compose.yml
+  # Only the two hand-written rule files — NOT the whole config dir. The
+  # container writes fail2ban.sqlite3 + a generated jail.local in there;
+  # rsync/--delete would clobber its state and ban history.
+  install_file "$REPO_ROOT/services/fail2ban/config/fail2ban/filter.d/jellyfin.conf" \
+               /srv/fail2ban/config/fail2ban/filter.d/jellyfin.conf
+  install_file "$REPO_ROOT/services/fail2ban/config/fail2ban/jail.d/jellyfin.conf" \
+               /srv/fail2ban/config/fail2ban/jail.d/jellyfin.conf
+  (( DRY_RUN )) && return 0
+  if [[ ! -d /srv/jellyfin/config/log ]]; then
+    warn "/srv/jellyfin/config/log absent — fail2ban has nothing to watch until Jellyfin has run"
+  fi
+  compose_up fail2ban
+  sleep 3
+  # compose_up is a no-op when the compose file is unchanged, so a rule-only
+  # edit needs an explicit reload to take effect.
+  if docker ps --format '{{.Names}}' | grep -qx fail2ban; then
+    docker exec fail2ban fail2ban-client reload >/dev/null 2>&1 \
+      && note "fail2ban-client reload" \
+      || warn "fail2ban reload failed — check 'docker logs fail2ban'"
+  fi
+  docker exec fail2ban fail2ban-client status jellyfin 2>/dev/null | sed 's/^/    /' || \
+    warn "jellyfin jail not active — set Jellyfin Known-proxies=127.0.0.1, then check 'docker logs fail2ban'"
 }
 
 deploy_authelia() {

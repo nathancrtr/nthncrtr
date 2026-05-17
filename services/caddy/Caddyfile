@@ -77,6 +77,28 @@ starmaya.nthncrtr.com {
 	reverse_proxy 100.65.46.92:8080
 }
 
+# Jellyfin — the ONE deliberately internet-exposed service (trusted users,
+# per-user accounts; operator decision, WORKLIST 6.6). The scoping mechanism
+# lives in this address line, so read carefully before touching it:
+#
+#  - ":8443" is the ONLY port the home router port-forwards (WAN 443 →
+#    natto:8443). Every other vhost above is :443-implicit and therefore
+#    stays tailnet-only exactly as before — do NOT add :8443 to any of them
+#    or you silently put it on the public internet.
+#  - ":443" is also listed so *inside* clients reach Jellyfin by the same
+#    hostname+TLS (Pi-hole split-horizon points jellyfin.nthncrtr.com at
+#    natto's LAN IP to dodge NAT hairpin). An explicit host:443 site is more
+#    specific than the `:443 { abort }` catch-all below, so only THIS host
+#    is served on 443 — the catch-all still swallows every other name.
+#  - NO `import authelia`: forward_auth breaks Jellyfin's native TV/phone
+#    clients (operator decision, WORKLIST 6.4/6.6). Jellyfin's own per-user
+#    accounts + the fail2ban jail (services/fail2ban) are the only barrier.
+#  - The cert still issues fine: the global DNS-01 challenge does not need
+#    the host reachable on 443, so the non-standard :8443 is a non-issue.
+jellyfin.nthncrtr.com:443, jellyfin.nthncrtr.com:8443 {
+	reverse_proxy 127.0.0.1:8096
+}
+
 :443 {
 	abort
 }

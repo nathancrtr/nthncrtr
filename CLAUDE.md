@@ -6,7 +6,7 @@ You are working in the version-controlled config + operational runbook for a sma
 
 | Host | Hostname | Role | OS / Arch | Services |
 |---|---|---|---|---|
-| **natto** | `natto` | Hub | Beelink Mini S12, x86_64, Ubuntu Server 26.04 LTS (migrated from Raspberry Pi/arm64/Debian on 2026-05-16 — see `runbooks/migrate-natto.md` Gaps §"2026-05-16") | Caddy (native, systemd), Pi-hole, Navidrome, Homepage, qBittorrent (behind Gluetun + Proton VPN), the *arrs, Nextcloud + Jellyfin (both Tailscale-only), Authelia (SSO gate for the web-admin tier via Caddy `forward_auth` — fronts the *arrs/qBittorrent/Homepage only) — all docker-managed compose projects. SMB/Samba is **not a supported feature** here (the old `\\natto\Music` share was dropped at the migration and is intentionally not reproduced). |
+| **natto** | `natto` | Hub | Beelink Mini S12, x86_64, Ubuntu Server 26.04 LTS (migrated from Raspberry Pi/arm64/Debian on 2026-05-16 — see `runbooks/migrate-natto.md` Gaps §"2026-05-16") | Caddy (native, systemd), Pi-hole, Navidrome, Homepage, qBittorrent (behind Gluetun + Proton VPN), the *arrs, Nextcloud (Tailscale-only), Jellyfin (**the one internet-exposed service** — public for trusted users via a dedicated Caddy `:8443` listener + router port-forward; `ddns` keeps its A record current, `fail2ban` guards its login — see `services/jellyfin/README.md` and WORKLIST 6.6), Authelia (SSO gate for the web-admin tier via Caddy `forward_auth` — fronts the *arrs/qBittorrent/Homepage only; **not** Jellyfin, which would break its native clients) — all docker-managed compose projects. SMB/Samba is **not a supported feature** here (the old `\\natto\Music` share was dropped at the migration and is intentionally not reproduced). |
 | **starmaya** | `kvass` (machine), `starmaya` (canonical) | Workshop appliance | Raspberry Pi, arm64, Debian 13 | `roaster-daemon` + `roaster-web` (Node.js, native systemd). On natto's tailnet as `kvass.tailaf7ea6.ts.net`. |
 | **workhorse** | `workhorse` | Client + dev | Intel Mac | Tailscale only — hosts no services. This is where you typically run from. |
 
@@ -59,6 +59,7 @@ These exist because skipping them once would be expensive. Each has a reason:
 5. **Never `--no-verify` git commits.** Never amend published commits. Never force-push.
 6. **Never add `Co-Authored-By: Claude` trailers to commit messages.** Operator preference, applies forever. ([memory](../../.claude/projects/-Users-nathancarter-repos-nthncrtr/memory/feedback_commit_attribution.md))
 7. **Always commit before and after a session.** A clean `git status` at session end means a future session can pick up cleanly.
+8. **Jellyfin is the only internet-exposed service; keep it that way.** Only Caddy's `jellyfin.nthncrtr.com:8443` listener is router-forwarded. Never add `:8443` to another vhost, never advise forwarding WAN `:443→443` (that exposes every vhost), and never put Jellyfin behind `import authelia` (breaks its native clients). The barrier is Jellyfin's per-user accounts + `services/fail2ban`; don't weaken either without saying so explicitly. See WORKLIST 6.6.
 
 ## Workflow patterns (the things that took a while to figure out)
 

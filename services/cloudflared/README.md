@@ -99,11 +99,16 @@ natto's Caddy LE cert — that's expected for the external path).
 
 ## Brute-force protection
 
-Host fail2ban can't see attackers through a tunnel (they hit Cloudflare,
-not natto). `services/fail2ban` is therefore configured with the
-**Cloudflare API ban action** — it still watches Jellyfin's log and bans
-per-IP with escalation, but enforces at Cloudflare's edge. See
-`services/fail2ban/README.md`.
+Through a tunnel, attackers hit Cloudflare, not natto — so host fail2ban
+is useless, and the fail2ban→Cloudflare-API approach was abandoned too
+(Cloudflare deprecated the zone IP-Access-Rules endpoint that the shipped
+action uses; scoped tokens get `10000 Authentication error` regardless of
+permissions — see WORKLIST 6.6 for the full dead-end). Brute-force
+protection is therefore a **Cloudflare WAF Rate-Limiting rule** on the
+Jellyfin login path, configured in the Cloudflare dashboard (zone
+`nthncrtr.com` → Security → WAF → Rate limiting rules). It is dashboard
+state, not in this repo — like the Pi-hole split-horizon record.
+Jellyfin's own per-user accounts + that rule are the gate.
 
 ## Cloudflare ToS note
 

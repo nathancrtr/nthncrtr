@@ -11,14 +11,15 @@
 # One-time bootstrap (not handled here): git clone this repo to
 # /srv/nthncrtr-repo and put a read-only deploy key at /root/.ssh/.
 #
-# Services: caddy navidrome homepage backup qbittorrent radarr sonarr prowlarr nextcloud jellyfin cloudflared fail2ban authelia pihole starmaya
-# Default (no service args): caddy navidrome homepage backup qbittorrent radarr sonarr prowlarr nextcloud jellyfin cloudflared fail2ban
-#   — cloudflared/fail2ban exist only because Jellyfin is public (WORKLIST
-#     6.6): cloudflared is the Cloudflare Tunnel (the public path; GFiber
-#     can't port-forward — see services/cloudflared/README.md), fail2ban
-#     guards the login via the Cloudflare API. Both default-on; harmless
-#     before their secrets/tunnel are provisioned. (ddns was removed in the
-#     6.6 pivot — a tunnel needs no WAN-IP A record.)
+# Services: caddy navidrome homepage backup qbittorrent radarr sonarr prowlarr nextcloud jellyfin cloudflared authelia pihole starmaya
+# Default (no service args): caddy navidrome homepage backup qbittorrent radarr sonarr prowlarr nextcloud jellyfin cloudflared
+#   — cloudflared exists only because Jellyfin is public (WORKLIST 6.6):
+#     it's the Cloudflare Tunnel public path (GFiber can't port-forward —
+#     see services/cloudflared/README.md). Default-on; harmless before the
+#     tunnel is provisioned. (ddns and fail2ban were both removed in the
+#     6.6 pivots — a tunnel needs no WAN-IP A record, and brute-force
+#     protection is a Cloudflare dashboard Rate-Limiting rule, not a
+#     container — see WORKLIST 6.6 / services/jellyfin/README.md.)
 #   — pihole is gated behind --yes-pihole (DNS outage for ~30s).
 #   — starmaya must be requested explicitly (deploys to kvass over ssh).
 #   — authelia must be requested explicitly (the SSO gate; deploy it
@@ -39,8 +40,8 @@ usage() {
   cat <<'EOF'
 Usage: sudo ./deploy.sh [--dry-run] [--yes-pihole] [services...]
 
-Services: caddy navidrome homepage backup qbittorrent radarr sonarr prowlarr nextcloud jellyfin cloudflared fail2ban pihole starmaya
-Default (no service args): caddy navidrome homepage backup qbittorrent radarr sonarr prowlarr nextcloud jellyfin cloudflared fail2ban
+Services: caddy navidrome homepage backup qbittorrent radarr sonarr prowlarr nextcloud jellyfin cloudflared pihole starmaya
+Default (no service args): caddy navidrome homepage backup qbittorrent radarr sonarr prowlarr nextcloud jellyfin cloudflared
 EOF
   exit "${1:-0}"
 }
@@ -58,7 +59,7 @@ done
 
 SERVICES=("$@")
 if [[ ${#SERVICES[@]} -eq 0 ]]; then
-  SERVICES=(caddy navidrome homepage backup qbittorrent radarr sonarr prowlarr nextcloud jellyfin cloudflared fail2ban)
+  SERVICES=(caddy navidrome homepage backup qbittorrent radarr sonarr prowlarr nextcloud jellyfin cloudflared)
   (( YES_PIHOLE )) && SERVICES+=(pihole)
 fi
 
@@ -371,46 +372,6 @@ deploy_cloudflared() {
   # No health endpoint; '4x Registered tunnel connection' in the log = up.
   docker logs --tail 4 cloudflared 2>&1 | sed 's/^/    /' || \
     warn "no cloudflared logs yet — check 'docker logs cloudflared'"
-}
-
-deploy_fail2ban() {
-  log "fail2ban"
-  local CHANGED=0
-  (( DRY_RUN )) || {
-    [[ -d /srv/fail2ban ]] || { install -d -o root -g root -m 0755 /srv/fail2ban; note "created /srv/fail2ban"; }
-    install -d -o root -g root -m 0755 /srv/fail2ban/config/fail2ban/filter.d
-    install -d -o root -g root -m 0755 /srv/fail2ban/config/fail2ban/jail.d
-    install -d -o root -g root -m 0755 /srv/fail2ban/config/fail2ban/action.d
-  }
-  install_file "$REPO_ROOT/services/fail2ban/docker-compose.yml" /srv/fail2ban/docker-compose.yml
-  # Only the two hand-written rule files — NOT the whole config dir. The
-  # container writes fail2ban.sqlite3 + a generated jail.local in there;
-  # rsync/--delete would clobber its state and ban history.
-  install_file "$REPO_ROOT/services/fail2ban/config/fail2ban/filter.d/jellyfin.conf" \
-               /srv/fail2ban/config/fail2ban/filter.d/jellyfin.conf
-  install_file "$REPO_ROOT/services/fail2ban/config/fail2ban/jail.d/jellyfin.conf" \
-               /srv/fail2ban/config/fail2ban/jail.d/jellyfin.conf
-  # The Cloudflare API token is an operator-provided secret (.local,
-  # gitignored) — never installed from the repo, only checked for.
-  (( DRY_RUN )) && return 0
-  if [[ ! -d /srv/jellyfin/config/log ]]; then
-    warn "/srv/jellyfin/config/log absent — fail2ban has nothing to watch until Jellyfin has run"
-  fi
-  if [[ ! -f /srv/fail2ban/config/fail2ban/action.d/cloudflare-token.local ]]; then
-    warn "cloudflare-token.local missing — fail2ban will detect abuse but cannot ban"
-    warn "  at Cloudflare. See services/fail2ban/README.md (REQUIRED operator step 2)."
-  fi
-  compose_up fail2ban
-  sleep 3
-  # compose_up is a no-op when the compose file is unchanged, so a rule-only
-  # edit needs an explicit reload to take effect.
-  if docker ps --format '{{.Names}}' | grep -qx fail2ban; then
-    docker exec fail2ban fail2ban-client reload >/dev/null 2>&1 \
-      && note "fail2ban-client reload" \
-      || warn "fail2ban reload failed — check 'docker logs fail2ban'"
-  fi
-  docker exec fail2ban fail2ban-client status jellyfin 2>/dev/null | sed 's/^/    /' || \
-    warn "jellyfin jail not active — set Jellyfin Known-proxies=127.0.0.1, then check 'docker logs fail2ban'"
 }
 
 deploy_authelia() {

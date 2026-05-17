@@ -737,11 +737,21 @@ Caddy `:443` → Jellyfin (no Cloudflare round-trip for local 4k). One
 `PublishedServerUrl` (no port) serves both. `services/ddns` is **removed**
 (a tunnel needs no WAN-IP A record).
 
-**Brute-force under a tunnel:** attackers hit Cloudflare, never natto, so
-host-firewall fail2ban is useless. `services/fail2ban` keeps the jail but
-its ban action is **`cloudflare-token`** — bans land in a Cloudflare IP
-Access Rule at the edge. Needs a CF API token (Zone → Firewall Services →
-Edit on nthncrtr.com) + the zone ID, in a gitignored `.local`.
+**Brute-force (two pivots — keep this history):** through a tunnel,
+attackers hit Cloudflare not natto, so host-firewall fail2ban is useless.
+*Pivot 2a:* reworked `services/fail2ban` to the `cloudflare-token` ban
+action (ban at Cloudflare's edge via API). *Dead end:* the shipped action
+calls Cloudflare's **deprecated zone IP-Access-Rules endpoint**
+(`zones/<z>/firewall/access_rules/rules`); scoped API tokens get
+`10000 Authentication error` there *regardless of permissions* (verified
+live: token could read the zone but every firewall/account/lists endpoint
+returned 10000; two token iterations incl. correct Firewall-Services:Edit
+scope did not help). *Pivot 2b (final):* **`services/fail2ban` retired
+entirely**; brute-force protection is a **Cloudflare WAF Rate-Limiting
+rule** on the login path — dashboard state (zone `nthncrtr.com` → Security
+→ WAF → Rate limiting), not in the repo, like the Pi-hole split-horizon
+record. No API token, no container, no deprecated surface. Jellyfin still
+logs failed auths itself if forensics are needed.
 
 **Preconditions:**
 - Repo clean; 6.2 (Jellyfin standup) DONE.
@@ -754,9 +764,9 @@ Edit on nthncrtr.com) + the zone ID, in a gitignored `.local`.
   into `deploy.sh` (default set, placeholder-safe config install) +
   `bootstrap/natto.sh`.
 - `services/ddns/` **removed** (repo + deploy.sh + bootstrap de-wired).
-- `services/fail2ban/`: `banaction = cloudflare-token`, host-net/NET_ADMIN
-  dropped, `cloudflare-token.local.example` template + `.gitignore` for the
-  secret; README/compose rewritten for the edge-ban model.
+- `services/fail2ban/` **removed** (repo + deploy.sh + bootstrap de-wired)
+  — see the two-pivot brute-force note above; protection is now the
+  Cloudflare WAF Rate-Limiting rule (operator dashboard step, not in repo).
 - `services/caddy/Caddyfile`: `play.nthncrtr.com` back to a plain
   `:443`-implicit inside-only block (no `:8443`, no `import authelia`);
   `caddy adapt` passes.
@@ -778,52 +788,61 @@ Edit on nthncrtr.com) + the zone ID, in a gitignored `.local`.
    `/srv/cloudflared/` (0600) → fill the tunnel UUID into
    `/srv/cloudflared/config.yml` → `cloudflared tunnel route dns play
    play.nthncrtr.com` (creates the proxied CNAME).
-4. fail2ban token: provide
-   `/srv/fail2ban/config/fail2ban/action.d/cloudflare-token.local` (0600,
-   `cftoken` = token scoped Zone→Firewall Services→Edit on nthncrtr.com,
-   plus `cfzone` = the nthncrtr.com Zone ID).
-5. Pi-hole (v6) split-horizon: local A record `play.nthncrtr.com →
+4. **Cloudflare WAF Rate-Limiting rule** (brute-force layer): Cloudflare
+   dashboard → zone `nthncrtr.com` → Security → WAF → Rate limiting rules
+   → create: match URI path contains `/Users/AuthenticateByName`, ~5
+   req/min per IP, action block/managed-challenge ~10 min. Free plan = one
+   rule. (This replaces the retired fail2ban; see the brute-force note.)
+5. fail2ban teardown (the retired service): `cd /srv/fail2ban && sudo
+   docker compose down`, then `sudo rm -rf /srv/fail2ban`. **Revoke** the
+   unused Cloudflare API token that was created for it (dashboard → API
+   Tokens → delete) — it's dead weight + attack surface.
+6. Pi-hole (v6) split-horizon: local A record `play.nthncrtr.com →
    192.168.1.240` via admin UI **Settings → Local DNS Records** (writes
    `/etc/pihole/hosts/custom.list`, hot-reloads FTL — not a container
    restart, no DNS outage, so safety rule 1's stop/restart gate does not
    apply). Without it, LAN streams pointlessly hairpin through Cloudflare.
    Verify `dig +short play.nthncrtr.com @127.0.0.1` → natto LAN IP.
-6. Jellyfin UI: **Known proxies = `127.0.0.1`** (cloudflared connects from
-   localhost; required so the real client IP is logged for the fail2ban
-   edge-ban), disable UPnP, create the friend's non-admin per-user account,
+7. Jellyfin UI: **Known proxies = `127.0.0.1`** (cloudflared connects from
+   localhost — correct proxied-client behaviour + real IPs in Jellyfin's
+   own log), disable UPnP, create the friend's non-admin per-user account,
    strong passwords on all; set Playback → **Internet streaming bitrate
    limit ~10–15 Mbps** (uplink + limits Cloudflare video exposure).
-7. `deploy.sh caddy jellyfin cloudflared fail2ban` on natto (caddy
-   `adapt`-gated).
-8. Verify: inside `https://play.nthncrtr.com` (loads, login); outside
+8. `deploy.sh caddy jellyfin cloudflared` on natto (caddy `adapt`-gated).
+9. Verify: inside `https://play.nthncrtr.com` (loads, login); outside
    (cellular, WiFi off) friend streams a title; **QSV engages for a remote
    4k transcode** (services/jellyfin/README.md); `docker logs cloudflared`
    shows 4× `Registered tunnel connection`; **negative test** —
    `pi-hole.nthncrtr.com` / `natto.nthncrtr.com` must FAIL from outside;
    `df -h /`.
 
-**Follow-up (tracked, not in scope):** a Cloudflare WAF/Rate-Limiting rule
-on the Jellyfin login path as an always-on coarse layer in front of the
-per-IP fail2ban jail.
+**Follow-up (tracked, not in scope):** none outstanding for brute-force —
+the Cloudflare WAF Rate-Limiting rule (operator step 4) is the layer.
+Optional later: a stricter custom WAF expression (geo/ASN) if abuse shows.
 
 **Cloudflare ToS caveat:** Cloudflare restricts proxying large amounts of
 video. Low-volume, few trusted users is pragmatically fine and widely done
 but is a documented gray area; if the zone is ever throttled the fallback
-is the VPS-relay option. Keep usage modest (the bitrate cap in step 6
+is the VPS-relay option. Keep usage modest (the bitrate cap in step 7
 helps). Content licensing is the operator's responsibility.
 
-**Outcome:** Pivoted from router-forward to Cloudflare Tunnel after GFiber
-proved it impossible (three independent dead ends, above). Repo scaffolding
-committed (services/cloudflared, fail2ban→edge-ban, ddns removed, Caddy/
-jellyfin reverted to clean no-port URL, deploy.sh/bootstrap/docs).
-Activation (operator steps 1–8) pending — nothing public until the tunnel +
-DNS route exist. `caddy adapt` + `docker compose config` validated against
-natto pre-commit.
+**Outcome:** Pivoted twice. (1) Router-forward → Cloudflare Tunnel after
+GFiber proved port-forward impossible (three independent dead ends, above).
+(2) fail2ban edge-ban → retired, replaced by a Cloudflare WAF Rate-Limiting
+rule, after the shipped action's deprecated Cloudflare endpoint proved
+unusable with scoped tokens. Repo end state committed (services/cloudflared
+added; services/{ddns,fail2ban} removed; Caddy/jellyfin reverted to clean
+no-port URL; deploy.sh/bootstrap/docs consistent). Activation (operator
+steps 1–9) pending — nothing public until the tunnel + DNS route exist.
+`caddy adapt` + `docker compose config` validated against natto pre-commit;
+tunnel + external path were verified live before the fail2ban retirement.
 
 **Rollback:** revert the Caddyfile `play` block + `deploy.sh caddy`
 (adapt-gated; inside path drops, Jellyfin tailnet-only). `cloudflared
 tunnel delete play` + remove the Cloudflare DNS route to de-expose
 immediately (faster than a repo revert). `docker compose down` in
-`/srv/{cloudflared,fail2ban}` — independent, zero impact on other services.
-Jellyfin's own data/accounts untouched. Restoring `services/ddns` is **not**
+`/srv/cloudflared` — independent, zero impact on other services. Delete
+the Cloudflare Rate-Limiting rule in the dashboard if backing out the
+brute-force layer. Jellyfin's own data/accounts untouched. Restoring
+`services/ddns` or `services/fail2ban` is **not**
 part of rollback (it's obsolete regardless — the router path is dead).

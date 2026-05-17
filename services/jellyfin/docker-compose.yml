@@ -14,8 +14,9 @@
 # play.nthncrtr.com at natto's LAN IP → Caddy :443 → here. One
 # PublishedServerUrl (no port) is correct for both paths. NO Authelia
 # (forward_auth breaks native TV/phone clients — WORKLIST 6.4/6.6);
-# per-user accounts + fail2ban (services/fail2ban, Cloudflare-edge bans)
-# are the gate. The tunnel exposes ONLY this hostname → Jellyfin; nothing
+# per-user accounts + a Cloudflare WAF Rate-Limiting rule on the login
+# path (dashboard, not in repo — WORKLIST 6.6) are the gate. The tunnel
+# exposes ONLY this hostname → Jellyfin; nothing
 # else on natto is reachable from the internet. 8096 is Jellyfin's default
 # HTTP port, free on natto (8080 = gluetun, 8081 = nextcloud, 8053 =
 # pihole admin).
@@ -51,8 +52,8 @@
 #     address`. Host mode makes Jellyfin see the proxy as 127.0.0.1
 #     (loopback, inherently trusted) so the guard never fires.
 #   - 127.0.0.1 is then the correct, STABLE value for Jellyfin Dashboard →
-#     Networking → "Known proxies" — which is exactly what services/fail2ban
-#     already documents (that instruction was wrong under bridge mode).
+#     Networking → "Known proxies" (cloudflared connects from localhost) —
+#     correct proxied-client behaviour + real client IPs in Jellyfin's log.
 #   - This is also Jellyfin's own recommended mode behind a same-host proxy.
 # Host mode binds 8096 (+ 8920, 1900/udp DLNA, 7359/udp discovery) directly
 # on natto's interfaces — same LAN/tailnet reach as the old published 8096,

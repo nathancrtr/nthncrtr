@@ -274,13 +274,11 @@ step_srv() {
   # read-only) and is not created here.
   install -d -o "$(getent passwd 1000 | cut -d: -f1)" \
               -g "$(getent group  1000 | cut -d: -f1)" -m 0755 /srv/jellyfin
-  # cloudflared + fail2ban exist only because Jellyfin is public (WORKLIST
-  # 6.6). Root-owned: cloudflared needs compose + config.yml +
-  # credentials.json (operator-provided); fail2ban writes state under config/.
+  # cloudflared exists only because Jellyfin is public (WORKLIST 6.6) — the
+  # Cloudflare Tunnel public path. Root-owned: needs compose + config.yml +
+  # credentials.json (operator-provided). (Brute-force protection is a
+  # Cloudflare dashboard Rate-Limiting rule, not a service here.)
   install -d -o root -g root -m 0755 /srv/cloudflared
-  install -d -o root -g root -m 0755 /srv/fail2ban
-  install -d -o root -g root -m 0755 /srv/fail2ban/config/fail2ban/filter.d
-  install -d -o root -g root -m 0755 /srv/fail2ban/config/fail2ban/jail.d
 
   # Copy compose files (root-owned, world-readable so the docker group user
   # can `docker compose ...` against them).
@@ -306,14 +304,6 @@ step_srv() {
     "$REPO_ROOT/services/cloudflared/docker-compose.yml" /srv/cloudflared/docker-compose.yml
   install -o root -g root -m 0644 \
     "$REPO_ROOT/services/cloudflared/config.yml"         /srv/cloudflared/config.yml
-  install -o root -g root -m 0644 \
-    "$REPO_ROOT/services/fail2ban/docker-compose.yml"    /srv/fail2ban/docker-compose.yml
-  install -o root -g root -m 0644 \
-    "$REPO_ROOT/services/fail2ban/config/fail2ban/filter.d/jellyfin.conf" \
-    /srv/fail2ban/config/fail2ban/filter.d/jellyfin.conf
-  install -o root -g root -m 0644 \
-    "$REPO_ROOT/services/fail2ban/config/fail2ban/jail.d/jellyfin.conf" \
-    /srv/fail2ban/config/fail2ban/jail.d/jellyfin.conf
 }
 
 # ---------------------------------------------------------------------------
@@ -375,8 +365,6 @@ Next steps (operator):
        d. /srv/cloudflared/credentials.json (0600) + tunnel UUID in
           /srv/cloudflared/config.yml — see services/cloudflared/README.md
           (cloudflared tunnel login/create/route — interactive, operator).
-       e. /srv/fail2ban/secrets/cloudflare.env — CF API token for the
-          ban action. See services/fail2ban/README.md.
 
   2b. Public Jellyfin (the ONE internet-exposed service — WORKLIST 6.6).
       GFiber cannot port-forward (reserved 443 / phantom-device / DMZ=all);
@@ -387,11 +375,14 @@ Next steps (operator):
        - Pi-hole: add local DNS play.nthncrtr.com → natto LAN IP
          (split-horizon — inside clients use Caddy :443 directly, no
          Cloudflare round-trip; one URL works in + out).
+       - Cloudflare dashboard: a WAF Rate-Limiting rule on the Jellyfin
+         login path is the brute-force layer (no fail2ban — see
+         WORKLIST 6.6 for why the container approach was retired).
        - Jellyfin UI → Dashboard → Networking → Known proxies = 127.0.0.1
-         (cloudflared connects from localhost; needed so the real client
-         IP is logged for the fail2ban Cloudflare-API ban action).
-         Create per-user accounts; UPnP port-mapping OFF; set Playback →
-         Internet streaming bitrate limit ~10–15 Mbps.
+         (cloudflared connects from localhost; correct proxied-client
+         behaviour + real IPs in Jellyfin's own log). Create per-user
+         accounts; UPnP port-mapping OFF; set Playback → Internet
+         streaming bitrate limit ~10–15 Mbps.
 
   3. Restore service data from the latest /mnt/media/backups/natto-*.tgz tarball
      into /srv/{pihole,navidrome,homepage}/. (See runbooks/migrate-natto.md.)

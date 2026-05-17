@@ -96,8 +96,9 @@ starmaya.nthncrtr.com {
 #    catch-all below, so only THIS host is served; the catch-all still
 #    swallows every other name.
 #  - NO `import authelia`: forward_auth breaks Jellyfin's native TV/phone
-#    clients (WORKLIST 6.4/6.6). Jellyfin's own per-user accounts + the
-#    fail2ban jail (services/fail2ban, Cloudflare-edge bans) are the gate.
+#    clients (WORKLIST 6.4/6.6). The gate is Jellyfin's own per-user
+#    accounts + a Cloudflare WAF Rate-Limiting rule on the login path
+#    (dashboard config — see WORKLIST 6.6).
 #  - Name is "play", NOT "jellyfin", on purpose: `jellyfin.*` is exactly
 #    what automated Jellyfin-CVE scanners enumerate. Do NOT rename it.
 play.nthncrtr.com {

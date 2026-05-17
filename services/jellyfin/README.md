@@ -91,15 +91,24 @@ dig +short play.nthncrtr.com @127.0.0.1   # must be natto's LAN IP, NOT a Cloudf
 
 ### Hardening (this login now faces the internet)
 
-- **fail2ban** (`services/fail2ban`) bans brute-force IPs at **Cloudflare's
-  edge** via the API (host firewall is useless — attackers hit Cloudflare,
-  not natto, through the tunnel). Only effective once Jellyfin's **Known
-  proxies = `127.0.0.1`** is set (Dashboard → Networking) so the auth log
-  carries the real client IP — `cloudflared` connects from localhost.
-  **Required step.** See `services/fail2ban/README.md`.
+- **Brute-force = Cloudflare WAF Rate-Limiting rule** on the login path,
+  configured in the Cloudflare dashboard (zone `nthncrtr.com` → Security →
+  WAF → Rate limiting rules). This is dashboard state, **not in this repo**
+  (like the Pi-hole split-horizon record). fail2ban was tried first and
+  **retired**: through a tunnel attackers hit Cloudflare not natto (host
+  bans match nothing), and the fail2ban→Cloudflare-API path dead-ended on
+  Cloudflare's deprecation of the zone IP-Access-Rules endpoint (scoped
+  tokens → `10000` regardless of permissions). Full saga: WORKLIST 6.6.
+  Rule shape: match URI path `/Users/AuthenticateByName` (Jellyfin login),
+  ~5 req/min per IP → block/managed-challenge ~10 min. **Required before
+  sharing.** Jellyfin still logs failed auths itself if forensics are ever
+  needed (`docker exec jellyfin grep 'denied' /config/log/*.log`).
 - **Per-user accounts**, each non-admin where appropriate, library access
   scoped, Downloads/Live-TV/management off as desired. Strong password on
   *every* account including admin.
+- Dashboard → Networking → **Known proxies = `127.0.0.1`** (`cloudflared`
+  connects from localhost) so Jellyfin behaves correctly behind the proxy
+  and logs real client IPs.
 - Dashboard → Networking → **disable UPnP automatic port mapping** — there
   is no inbound port to map (the tunnel is outbound); don't let Jellyfin
   punch a hole.
@@ -108,9 +117,6 @@ dig +short play.nthncrtr.com @127.0.0.1   # must be natto's LAN IP, NOT a Cloudf
 - Set Dashboard → Playback → **Internet streaming bitrate limit**
   (~10–15 Mbps): protects the home uplink and limits how much traffic
   traverses Cloudflare's video-proxying gray area.
-- Layer-2 (follow-up, not shipped): a Cloudflare WAF/Rate-Limiting rule on
-  the Jellyfin login path as an always-on coarse layer in front of the
-  per-IP fail2ban jail. Tracked in WORKLIST 6.6.
 
 ### Why config on internal disk, not the 5TB
 
@@ -219,10 +225,11 @@ and is not duplicated by this service (it is read-only here).
 
 Stood up Tailscale-only alongside Nextcloud after the Pi → Beelink
 migration (WORKLIST 6.2). Made public-for-trusted-users in WORKLIST 6.6 via
-a **Cloudflare Tunnel** (`services/cloudflared`) + `services/fail2ban`
-(Cloudflare-edge bans) + Pi-hole split-horizon for the inside path. Comes
-up via `bootstrap/natto.sh` + `deploy.sh jellyfin cloudflared fail2ban`;
-the `cloudflared tunnel` login/create/route, the fail2ban Cloudflare token,
-the Pi-hole split-horizon record and Jellyfin Known-proxies/per-user
+a **Cloudflare Tunnel** (`services/cloudflared`) + a Cloudflare WAF
+Rate-Limiting rule for brute-force + Pi-hole split-horizon for the inside
+path. Comes up via `bootstrap/natto.sh` + `deploy.sh jellyfin cloudflared`;
+the `cloudflared tunnel` login/create/route, the Cloudflare Rate-Limiting
+rule, the Pi-hole split-horizon record and Jellyfin Known-proxies/per-user
 accounts are operator actions (see WORKLIST 6.6 and the per-service
-READMEs).
+READMEs). fail2ban was tried for brute-force and retired (WORKLIST 6.6 —
+Cloudflare deprecated the zone IP-Access-Rules API it depended on).

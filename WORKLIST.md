@@ -701,7 +701,7 @@ episodes (or Manual Import the hand-grabbed season pack already in
 **Rollback:** `git revert` — documentation + one benign `warn` in
 `deploy.sh`; no service config or state changed.
 
-### 6.6 Jellyfin → public for trusted users  [NEW — repo scaffolding committed; activation pending operator]
+### 6.6 Jellyfin → public for trusted users  [DONE — activated + live-verified 2026-05-17; brute-force rule operator-attested]
 
 Make Jellyfin reachable from a trusted friend's own home, their own
 per-user account, one clean URL `https://play.nthncrtr.com` (no port).
@@ -832,10 +832,15 @@ GFiber proved port-forward impossible (three independent dead ends, above).
 rule, after the shipped action's deprecated Cloudflare endpoint proved
 unusable with scoped tokens. Repo end state committed (services/cloudflared
 added; services/{ddns,fail2ban} removed; Caddy/jellyfin reverted to clean
-no-port URL; deploy.sh/bootstrap/docs consistent). Activation (operator
-steps 1–9) pending — nothing public until the tunnel + DNS route exist.
-`caddy adapt` + `docker compose config` validated against natto pre-commit;
-tunnel + external path were verified live before the fail2ban retirement.
+no-port URL; deploy.sh/bootstrap/docs consistent). **Activated &
+live-verified 2026-05-17:** `https://play.nthncrtr.com` serves Jellyfin
+from outside the network via the tunnel (WebFetch); DNS = Cloudflare
+proxied; cloudflared healthy (4× edge conns); Pi-hole split-horizon →
+natto LAN IP for the inside path; Known-proxies=127.0.0.1; QSV transcode
+confirmed; fail2ban container + `/srv/fail2ban` torn down. The Cloudflare
+WAF Rate-Limiting rule + the friend's per-user account + bitrate cap are
+**operator-attested** (dashboard/UI state not inspectable from here).
+`caddy adapt` + `docker compose config` validated against natto throughout.
 
 **Rollback:** revert the Caddyfile `play` block + `deploy.sh caddy`
 (adapt-gated; inside path drops, Jellyfin tailnet-only). `cloudflared

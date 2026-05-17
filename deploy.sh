@@ -186,6 +186,7 @@ deploy_qbittorrent() {
   install_file "$REPO_ROOT/services/qbittorrent/orpheus-restore.py"  /srv/qbittorrent/orpheus-restore.py 0755
   install_file "$REPO_ROOT/services/qbittorrent/orpheus-plan.py"     /srv/qbittorrent/orpheus-plan.py 0755
   install_file "$REPO_ROOT/services/qbittorrent/qbit-bulk-add.sh"    /srv/qbittorrent/qbit-bulk-add.sh 0755
+  install_file "$REPO_ROOT/services/qbittorrent/apply-tuning.sh"     /srv/qbittorrent/apply-tuning.sh 0755
   (( DRY_RUN )) && return 0
   # qBit config lives at /srv/qbittorrent/config; downloads land under /mnt/media
   # (mounted directly so Radarr/Sonarr can hardlink final files instead of copying).
@@ -214,6 +215,16 @@ deploy_qbittorrent() {
   compose_up qbittorrent
   sleep 3
   verify_url https://torrent.nthncrtr.com 200 || true
+  # Re-assert seedbox tuning (queueing/rate/scheduler/conn limits). qBit owns
+  # qBittorrent.conf, so this API-driven script is the version-controlled
+  # source of truth; idempotent, safe to run every deploy. Give qBit's WebUI
+  # a moment to come up inside gluetun's netns first.
+  sleep 5
+  if /srv/qbittorrent/apply-tuning.sh; then
+    note "seedbox tuning asserted"
+  else
+    warn "apply-tuning.sh failed — qBit prefs may be unmanaged (check localhost-bypass)"
+  fi
 }
 
 deploy_radarr() {

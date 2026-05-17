@@ -32,6 +32,14 @@ services:
         required: false
     environment:
       - TZ=America/New_York
+      # Instant push-on-change: the moment Proton assigns a new forwarded
+      # port, gluetun runs this in its own netns (so 127.0.0.1:8080 is qBit,
+      # localhost auth-bypass applies). Eliminates the up-to-60s dead-inbound
+      # window the qbit-port-updater poll would otherwise leave after a VPN
+      # reconnect — brutal on private-tracker torrents (no DHT/PEX fallback).
+      # The sidecar stays as a backstop for the qBit-restarted case.
+      - |
+        VPN_PORT_FORWARDING_UP_COMMAND=/bin/sh -c 'wget -qO- --post-data="json={\"listen_port\":{{PORTS}},\"upnp\":false,\"random_port\":false}" http://127.0.0.1:8080/api/v2/app/setPreferences'
     restart: unless-stopped
 
   qbittorrent:

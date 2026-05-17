@@ -31,13 +31,16 @@ Then log in at `https://torrent.nthncrtr.com`, change the admin password, and (r
 After first deploy, log in at `https://torrent.nthncrtr.com` and set:
 
 - **Options → Downloads → Default Save Path**: `/mnt/media/_unsorted/torrents` (deploy.sh creates this directory, owned by nthncrtr:nthncrtr). The earlier `/srv/qbittorrent/downloads/` mount has been removed — qbit now sees `/mnt/media` directly so Radarr/Sonarr can hardlink final files instead of copying.
-- **Options → Connection**: uncheck "Use UPnP / NAT-PMP port forwarding from my router". (The listening port itself is managed by the port-updater sidecar — don't set it manually.)
+- **Options → Connection**: uncheck "Use UPnP / NAT-PMP port forwarding from my router". (The listening port is managed automatically — see § Port forwarding sync. Don't set it manually; `apply-tuning.sh` also pins `upnp:false`/`random_port:false`.)
 - **Options → Advanced → Network Interface**: `tun0`. Gluetun normalizes the WireGuard interface to `tun0`, same name as OpenVPN — qBit will refuse to bind if Gluetun's tunnel isn't up.
 - **Options → Web UI → Authentication**: enable "Bypass authentication for clients on localhost". This is required for the port-updater sidecar (it runs in gluetun's netns, so it reaches qBit as 127.0.0.1 and would otherwise be rejected). Connections from outside the netns — natto's host processes, other Docker containers, your browser — still arrive over the Docker bridge and continue to need a password.
 
-## Port-updater sidecar
+## Port forwarding sync (two layers)
 
-A small `qbit-port-updater` container runs alongside gluetun in the same network namespace. It watches `/tmp/gluetun/forwarded_port` (gluetun's running record of the current Proton-assigned port) and pushes any change to qBit's `setPreferences` API. The script is `services/qbittorrent/port-updater.sh`, installed to `/srv/qbittorrent/port-updater.sh` and bind-mounted into the container — edit it on natto with `sudoedit` and `docker compose restart qbit-port-updater` to iterate.
+Proton hands out a forwarded port that changes on every VPN reconnect. qBit must be listening on exactly that port or inbound peers can't reach it — and on a **private-tracker** torrent there's no DHT/PEX fallback, so a stale port starves it to single-digit KiB/s. Two mechanisms keep qBit in sync:
+
+1. **Primary — gluetun `VPN_PORT_FORWARDING_UP_COMMAND`** (in `docker-compose.yml`). gluetun runs this hook *the instant* the forwarded port changes, in its own netns, `wget`-POSTing the new port to qBit's `setPreferences`. Zero-latency; no poll window.
+2. **Backstop — `qbit-port-updater` sidecar**. A small container alongside gluetun in the same netns, watching `/tmp/gluetun/forwarded_port` and pushing changes on a 60s poll. Covers the case where qBit itself restarts (lost its port) but the gluetun hook didn't re-fire. Script: `services/qbittorrent/port-updater.sh`, bind-mounted; edit on natto with `sudoedit` and `docker compose restart qbit-port-updater` to iterate.
 
 **Debugging:**
 
@@ -48,6 +51,25 @@ docker exec qbit-port-updater cat /state/forwarded_port      # same file, from s
 ```
 
 A common failure mode: `WARN: failed to push port` — usually means qBit's localhost-bypass setting wasn't enabled. Re-check the Web UI Authentication option above.
+
+## Seedbox tuning
+
+natto is a shared household hub (Pi-hole DNS, Jellyfin, Nextcloud, Navidrome), **not** a dedicated seedbox — so the tuning is *generous-but-bounded*, never "unlimited". It is version-controlled, not left to drift in qBittorrent.conf: `apply-tuning.sh` is the source of truth and `deploy.sh qbittorrent` re-asserts it via the WebUI API on every deploy (idempotent; survives a `config/` wipe). Change values in `apply-tuning.sh` and this table together.
+
+| Setting | Value | Rationale |
+|---|---|---|
+| Queueing | **off** | Every completed torrent seeds 24/7. (Trade-off: bulk-adds all start at once — fine for the add-a-few / seed-restore workflow.) |
+| Download / upload limit (off-peak) | **30 / 30 MiB/s** | Full speed 20:00–08:00. Bounded so it never fully saturates natto's link. |
+| Alternative limits (scheduled) | **15 down / 8 MiB/s up** | Active **08:00–20:00 daily** — seeds hard but leaves headroom for Jellyfin/Nextcloud/DNS during waking hours. |
+| Max connections (global / per-torrent) | **2000 / 200** | High-volume seeding. |
+| Max upload slots (global / per-torrent) | **100 / 8** | Defaults (20/4) starve a many-torrent seedbox. |
+
+```sh
+sudo /srv/qbittorrent/apply-tuning.sh           # re-assert (deploy.sh does this for you)
+sudo /srv/qbittorrent/apply-tuning.sh --show    # dump current live prefs, change nothing
+```
+
+If you genuinely want unlimited overnight, raise the off-peak `dl_limit`/`up_limit` in `apply-tuning.sh` — but remember a saturated uplink degrades household DNS responsiveness.
 
 ## Files / paths
 

@@ -13,8 +13,27 @@
 #    systemd-resolved's stub is disabled and MagicDNS does not resolve here.
 #    Tailnet *connectivity* to that IP is fine (tailscale ping kvass: ~8ms).
 
+# SSO gate for the web-admin tier. Authelia runs as a Docker container
+# published on 127.0.0.1:9091 (deploy.sh authelia — opt-in). Caddy is native
+# on natto so 127.0.0.1 reaches it. Any site that `import authelia`s requires
+# an Authelia session; unauthenticated requests are 302'd to the portal.
+# Authelia MUST be up before this config is reloaded or the gated sites 502
+# — deploy order is `deploy.sh authelia` then `deploy.sh caddy`.
+(authelia) {
+	forward_auth 127.0.0.1:9091 {
+		uri /api/authz/forward-auth
+		copy_headers Remote-User Remote-Groups Remote-Name Remote-Email
+	}
+}
+
+# SSO portal (NOT itself behind the gate — that would be a redirect loop).
+auth.nthncrtr.com {
+	reverse_proxy 127.0.0.1:9091
+}
+
 # Dashboard
 home.nthncrtr.com {
+	import authelia
 	reverse_proxy 127.0.0.1:3000
 }
 
@@ -30,21 +49,25 @@ pi-hole.nthncrtr.com {
 
 # Torrent client
 torrent.nthncrtr.com {
+	import authelia
 	reverse_proxy 127.0.0.1:8080
 }
 
 # Movies
 radarr.nthncrtr.com {
+	import authelia
 	reverse_proxy 127.0.0.1:7878
 }
 
 # TV series
 sonarr.nthncrtr.com {
+	import authelia
 	reverse_proxy 127.0.0.1:8989
 }
 
 # Indexer manager
 prowlarr.nthncrtr.com {
+	import authelia
 	reverse_proxy 127.0.0.1:9696
 }
 

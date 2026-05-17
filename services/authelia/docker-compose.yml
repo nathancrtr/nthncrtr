@@ -1,0 +1,51 @@
+# Authelia — single sign-on for the web-admin tier. Managed by deploy.sh
+# (deploy.sh authelia — OPT-IN, not in the default service set).
+#
+# Role: Caddy `forward_auth` calls this container to gate browser access to
+# the *arrs, qBittorrent and Homepage. One login (cookie scoped to
+# .nthncrtr.com) covers all of them. NOT in front of Navidrome, Jellyfin,
+# Plex, Nextcloud or Pi-hole — those keep their own auth (see README).
+#
+# Footprint: deliberately one container. Single-user file backend, SQLite
+# storage, in-memory sessions → no Postgres/Redis (cf. the Authentik
+# alternative weighed in services/authelia/README.md).
+#
+# Exposure: published on 127.0.0.1 only, NOT 0.0.0.0. This is a deliberate
+# deviation from the rest of the stack (whose compose files publish on
+# 0.0.0.0 — see the Caddyfile header). The identity provider should not be
+# reachable on the LAN/tailnet except through Caddy, which runs natively on
+# natto and reaches it at 127.0.0.1:9091.
+#
+# Data layout on natto (Beelink internal ext4):
+#   /srv/authelia/configuration.yml  → deployed from repo (NOT a secret)
+#   /srv/authelia/users.yml          → the user db incl. argon2 hash (SECRET,
+#                                       mode 0600, NOT in repo)
+#   /srv/authelia/secrets.env        → session/storage/jwt secrets (SECRET)
+#   /srv/authelia/data/              → SQLite db + filesystem notifier file
+services:
+  authelia:
+    image: authelia/authelia:4.39
+    container_name: authelia
+    ports:
+      - "127.0.0.1:9091:9091"
+    volumes:
+      - ./configuration.yml:/config/configuration.yml:ro
+      - ./users.yml:/config/users.yml:ro
+      - ./data:/data
+    env_file:
+      # secrets.env is NOT in the repo — see secrets.env.example for the
+      # variable list. On natto: /srv/authelia/secrets.env, mode 0600.
+      # Optional so `docker compose config` works on workhorse where the
+      # file is intentionally absent.
+      - path: secrets.env
+        required: false
+    environment:
+      - TZ=America/New_York
+      - X_AUTHELIA_CONFIG=/config/configuration.yml
+    healthcheck:
+      test: ["CMD", "authelia", "healthcheck"]
+      interval: 30s
+      timeout: 5s
+      retries: 5
+      start_period: 20s
+    restart: unless-stopped

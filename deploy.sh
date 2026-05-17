@@ -11,10 +11,12 @@
 # One-time bootstrap (not handled here): git clone this repo to
 # /srv/nthncrtr-repo and put a read-only deploy key at /root/.ssh/.
 #
-# Services: caddy navidrome homepage backup qbittorrent radarr sonarr prowlarr nextcloud jellyfin pihole starmaya
+# Services: caddy navidrome homepage backup qbittorrent radarr sonarr prowlarr nextcloud jellyfin authelia pihole starmaya
 # Default (no service args): caddy navidrome homepage backup qbittorrent radarr sonarr prowlarr nextcloud jellyfin
 #   — pihole is gated behind --yes-pihole (DNS outage for ~30s).
 #   — starmaya must be requested explicitly (deploys to kvass over ssh).
+#   — authelia must be requested explicitly (the SSO gate; deploy it
+#     BEFORE caddy on first stand-up or the gated sites 502 — see below).
 #
 # Options:
 #   --dry-run         Show diffs and intended actions; change nothing.
@@ -322,6 +324,41 @@ deploy_jellyfin() {
   sleep 5
   # Tailscale-only: no public URL. /health answers 200 "Healthy" once up.
   verify_url http://127.0.0.1:8096/health 200 || true
+}
+
+deploy_authelia() {
+  log "authelia"
+  local CHANGED=0
+  (( DRY_RUN )) || {
+    # configuration.yml is deployed (not a secret). users.yml + secrets.env
+    # + data/ are provisioned out-of-band on natto and are NOT touched here.
+    [[ -d /srv/authelia ]]      || { install -d -o root -g root -m 0755 /srv/authelia;      note "created /srv/authelia"; }
+    [[ -d /srv/authelia/data ]] || { install -d -o root -g root -m 0755 /srv/authelia/data; note "created /srv/authelia/data"; }
+  }
+  install_file "$REPO_ROOT/services/authelia/docker-compose.yml" /srv/authelia/docker-compose.yml
+  install_file "$REPO_ROOT/services/authelia/configuration.yml"  /srv/authelia/configuration.yml
+  (( DRY_RUN )) && return 0
+  # Without users.yml or secrets.env Authelia exits non-zero on boot, which
+  # would leave every site that `import authelia`s returning 502. Surface it
+  # loudly rather than letting the gate fail closed silently.
+  if [[ ! -f /srv/authelia/users.yml ]]; then
+    warn "/srv/authelia/users.yml not found — see services/authelia/users.yml.example"
+    warn "Authelia will not start; gated sites (home/torrent/radarr/sonarr/prowlarr) will 502."
+  fi
+  if [[ ! -f /srv/authelia/secrets.env ]]; then
+    warn "/srv/authelia/secrets.env not found — see services/authelia/secrets.env.example"
+    warn "Authelia will not start; gated sites will 502."
+  fi
+  compose_up authelia
+  sleep 5
+  # Portal is 127.0.0.1-only (no Caddyfile-independent public URL). The
+  # forward-auth endpoint returns 401 for an unauthenticated probe, which
+  # proves the service is up and the authz handler is wired.
+  verify_url http://127.0.0.1:9091/api/authz/forward-auth 401 || \
+    warn "authelia authz endpoint not answering 401 — check 'docker logs authelia'"
+  warn "reminder: 'deploy.sh caddy' must run AFTER this for the gate to take effect;"
+  warn "and set the *arrs' auth to 'Disabled for Local Addresses' + qBit's subnet"
+  warn "bypass (see services/authelia/README.md) to avoid a double login."
 }
 
 deploy_pihole() {

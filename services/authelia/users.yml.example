@@ -1,0 +1,25 @@
+# Authelia file authentication backend — the user database.
+#
+# The password field is an argon2id hash; the file is therefore a SECRET.
+# Copy to /srv/authelia/users.yml on natto (owner root:root, mode 0600) and
+# replace the hash. It is gitignored — never commit the real users.yml.
+#
+# Generate the hash on any host with docker (interactive prompt, password
+# not echoed, not stored in shell history):
+#
+#   docker run --rm -it authelia/authelia:4.39 \
+#     authelia crypto hash generate argon2
+#
+# Paste the resulting "$argon2id$..." string as the password value below.
+# To change the password later: regenerate and replace the hash, then
+# `docker restart authelia`.
+
+users:
+  nthncrtr:
+    disabled: false
+    displayname: "Nathan Carter"
+    # Replace with the generated $argon2id$... string (keep the quotes).
+    password: "$argon2id$v=19$m=65536,t=3,p=4$REPLACE_ME"
+    email: nathan.carter@e14s.com
+    groups:
+      - admins

@@ -1,0 +1,78 @@
+# Authelia configuration. Committed to the repo (NOT a secret) — deployed to
+# /srv/authelia/configuration.yml by `deploy.sh authelia`.
+#
+# The three secrets (session, storage encryption, reset-password JWT) are
+# DELIBERATELY ABSENT here. They are injected at runtime from
+# /srv/authelia/secrets.env as AUTHELIA_SESSION_SECRET,
+# AUTHELIA_STORAGE_ENCRYPTION_KEY and
+# AUTHELIA_IDENTITY_VALIDATION_RESET_PASSWORD_JWT_SECRET. Authelia merges env
+# over file config, so the keys are simply omitted below rather than left
+# blank. See secrets.env.example.
+#
+# Schema: Authelia 4.38+ (server.address, session.cookies list,
+# identity_validation.*). Keep the pinned image tag in docker-compose.yml and
+# this schema in lockstep — Authelia has changed config keys across minors.
+
+theme: dark
+
+server:
+  address: 'tcp://:9091/'
+
+log:
+  level: info
+
+# TOTP is configured but NOT required: access_control.default_policy is
+# one_factor (operator chose convenience over a second factor — the services
+# already sit behind Tailscale/Caddy). A user can still self-enrol TOTP and
+# this can be raised to two_factor later with no redesign.
+totp:
+  issuer: nthncrtr.com
+
+identity_validation:
+  reset_password:
+    # jwt_secret supplied via AUTHELIA_IDENTITY_VALIDATION_RESET_PASSWORD_JWT_SECRET.
+    # Password reset itself is inert (filesystem notifier, no SMTP) — reset
+    # links land in /data/notification.txt for a single-user manual flow.
+    {}
+
+authentication_backend:
+  password_reset:
+    disable: true
+  file:
+    path: /config/users.yml
+    password:
+      algorithm: argon2
+
+# Single rule: everything Authelia is asked about (only the subdomains that
+# `import authelia` in the Caddyfile ever reach this endpoint) requires one
+# successful login. The portal (auth.nthncrtr.com) is NOT behind forward_auth
+# so it needs no bypass rule.
+access_control:
+  default_policy: one_factor
+
+session:
+  # secret supplied via AUTHELIA_SESSION_SECRET.
+  cookies:
+    - domain: nthncrtr.com
+      authelia_url: https://auth.nthncrtr.com
+      default_redirection_url: https://home.nthncrtr.com
+      expiration: 12h
+      inactivity: 1h
+
+# Brute-force throttle on the single account.
+regulation:
+  max_retries: 4
+  find_time: 2m
+  ban_time: 10m
+
+storage:
+  # encryption_key supplied via AUTHELIA_STORAGE_ENCRYPTION_KEY.
+  local:
+    path: /data/db.sqlite3
+
+# Filesystem notifier instead of SMTP: this is a single-user setup with no
+# mail server. The only thing it would email (password reset / TOTP enrol)
+# is read out of the file on natto by the operator instead.
+notifier:
+  filesystem:
+    filename: /data/notification.txt

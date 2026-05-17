@@ -6,7 +6,7 @@ You are working in the version-controlled config + operational runbook for a sma
 
 | Host | Hostname | Role | OS / Arch | Services |
 |---|---|---|---|---|
-| **natto** | `natto` | Hub | Beelink Mini S12, x86_64, Ubuntu Server 26.04 LTS (migrated from Raspberry Pi/arm64/Debian on 2026-05-16 — see `runbooks/migrate-natto.md` Gaps §"2026-05-16") | Caddy (native, systemd), Pi-hole, Navidrome, Homepage, qBittorrent (behind Gluetun + Proton VPN), the *arrs, Nextcloud + Jellyfin (both Tailscale-only) — all docker-managed compose projects. SMB/Samba is **not a supported feature** here (the old `\\natto\Music` share was dropped at the migration and is intentionally not reproduced). |
+| **natto** | `natto` | Hub | Beelink Mini S12, x86_64, Ubuntu Server 26.04 LTS (migrated from Raspberry Pi/arm64/Debian on 2026-05-16 — see `runbooks/migrate-natto.md` Gaps §"2026-05-16") | Caddy (native, systemd), Pi-hole, Navidrome, Homepage, qBittorrent (behind Gluetun + Proton VPN), the *arrs, Nextcloud + Jellyfin (both Tailscale-only), Authelia (SSO gate for the web-admin tier via Caddy `forward_auth` — fronts the *arrs/qBittorrent/Homepage only) — all docker-managed compose projects. SMB/Samba is **not a supported feature** here (the old `\\natto\Music` share was dropped at the migration and is intentionally not reproduced). |
 | **starmaya** | `kvass` (machine), `starmaya` (canonical) | Workshop appliance | Raspberry Pi, arm64, Debian 13 | `roaster-daemon` + `roaster-web` (Node.js, native systemd). On natto's tailnet as `kvass.tailaf7ea6.ts.net`. |
 | **workhorse** | `workhorse` | Client + dev | Intel Mac | Tailscale only — hosts no services. This is where you typically run from. |
 
@@ -34,6 +34,7 @@ External access flow: `*.nthncrtr.com` → Cloudflare DNS (DNS-01 challenge toke
     ├── qbittorrent/             # qBit + Gluetun (Proton VPN) sidecar
     ├── nextcloud/               # NC + MariaDB + Redis + cron (Tailscale-only) + secrets.env.example
     ├── jellyfin/                # docker-compose.yml (Tailscale-only; /dev/dri HW transcode)
+    ├── authelia/                # SSO IdP: compose + configuration.yml + secrets/users (gitignored) — opt-in deploy
     ├── starmaya/                # systemd units + udev rule (deploys to kvass)
     └── backup/                  # backup.sh + nextcloud-data-sync.sh + their {service,timer}s
 ```

@@ -631,3 +631,35 @@ the repo to remove; the change makes the *unsupported* status explicit
 rather than reading as a transient migration casualty.
 
 **Rollback:** `git revert` — docs only, no running service affected.
+
+### 6.4 SSO for the web-admin tier (Authelia + Caddy forward_auth)  [NEW — scaffolding committed; activation pending operator]
+
+Collapse the per-app password-manager entries for the *arrs, qBittorrent
+and Homepage to one Authelia login. Scope (operator decision): web-admin
+tier only, optimised for convenience (one_factor) over a hard security
+boundary — services already sit behind Tailscale/Caddy. Plex (plex.tv,
+structurally impossible), Jellyfin (breaks non-browser clients), Navidrome,
+Nextcloud and Pi-hole are explicitly out of scope.
+
+**Preconditions:**
+- Repo clean; `services/authelia/` scaffolding committed.
+- Cloudflare DNS `auth.nthncrtr.com` record added (one-record-per-host —
+  no wildcard) pointing as the other `*.nthncrtr.com` records do.
+- `/srv/authelia/{secrets.env,users.yml}` provisioned on natto (0600,
+  root:root) per services/authelia/README.md.
+
+**Success criteria:**
+- `deploy.sh authelia` (opt-in) brings the container up;
+  `127.0.0.1:9091/api/authz/forward-auth` → 401.
+- `deploy.sh caddy` (run *after*) reloads cleanly (`caddy adapt` passes).
+- `https://radarr.nthncrtr.com` in a fresh browser → 302 to
+  `auth.nthncrtr.com` → login → back to Radarr; `sonarr.nthncrtr.com`
+  then does NOT re-prompt (shared `.nthncrtr.com` cookie).
+- Homepage *arr/qBit widgets still render (API-key path unaffected:
+  *arrs set to "Disabled for Local Addresses", qBit subnet-bypass kept).
+- Navidrome / Jellyfin / Nextcloud / Pi-hole logins unchanged.
+
+**Rollback:** revert the Caddyfile `import authelia` + portal/snippet,
+`deploy.sh caddy` (validates, gate comes off), `docker compose down` in
+/srv/authelia. Apps' own auth only local-disabled, never deleted —
+re-enable per service. `/srv/authelia/data` disposable.

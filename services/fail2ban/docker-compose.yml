@@ -3,36 +3,35 @@
 #
 # WHY THIS EXISTS: play.nthncrtr.com is internet-exposed with NO Authelia
 # in front (forward_auth breaks native clients — WORKLIST 6.4/6.6), so
-# Jellyfin's own login is the only credential gate, and Jellyfin's built-in
-# lockout is weak. This watches Jellyfin's auth log and bans source IPs at
-# the host firewall after repeated failures.
+# Jellyfin's own login is the only credential gate and its built-in lockout
+# is weak. This watches Jellyfin's auth log and bans abusive source IPs.
 #
-# WHY HOST NETWORK + NET_ADMIN: fail2ban must write the *host's* netfilter
-# rules to actually drop attacker packets. The attack path is WAN 443 →
-# router → natto:8443 → native Caddy (NOT the Docker-published :8096), so a
-# ban in the host INPUT chain stops it before Caddy ever sees it — no
-# DOCKER-USER chain gymnastics needed (that would only matter if the public
-# path went through a Docker-published port, which it deliberately doesn't).
+# WHY THE BAN ACTION IS CLOUDFLARE, NOT iptables: the public path is a
+# Cloudflare Tunnel (services/cloudflared). External attackers hit
+# Cloudflare's edge, never natto — cloudflared connects to Jellyfin from
+# localhost. A host iptables ban would match nothing (those packets never
+# traverse natto). So the jail's banaction is `cloudflare-token`: it adds
+# the offender to a Cloudflare IP Access Rule via the API, enforced at the
+# edge where the attacker actually is. Consequence: this container needs
+# only OUTBOUND https to the Cloudflare API — NO host network, NO NET_ADMIN
+# (both removed; they were for the dead host-firewall model).
 #
-# WHY IT SEES THE REAL ATTACKER IP: Caddy reverse_proxy sets
-# X-Forwarded-For; Jellyfin only trusts it (and logs the real client IP
-# instead of 127.0.0.1) once "Known proxies" = 127.0.0.1 is set in
-# Dashboard → Networking. That setting is a REQUIRED operator step — without
-# it every failure logs as 127.0.0.1 and this jail is useless. See README.
+# WHY IT STILL SEES THE REAL ATTACKER IP: cloudflared forwards
+# X-Forwarded-For / CF-Connecting-IP; Jellyfin logs the real client IP only
+# if "Known proxies" = 127.0.0.1 is set (Dashboard → Networking — cloudflared
+# connects from localhost). REQUIRED operator step; without it every failure
+# logs as a localhost IP and the jail bans nothing useful. See README.
 #
-# Jellyfin writes logs to /srv/jellyfin/config/log on the host; mounted
-# read-only here. fail2ban's own config + state live in ./config (the
-# jail.d/filter.d files are version-controlled and pushed by deploy.sh).
+# Secret: the Cloudflare API token for the ban action lives in
+# /srv/fail2ban/config/fail2ban/action.d/cloudflare-token.local (mode 0600,
+# operator-provided, gitignored — fail2ban auto-merges *.local over *.conf).
+# Jellyfin logs are mounted read-only; fail2ban's config + state live in
+# ./config (the jail.d/filter.d files are version-controlled).
 services:
   fail2ban:
     image: lscr.io/linuxserver/fail2ban:latest
     container_name: fail2ban
-    cap_add:
-      - NET_ADMIN
-      - NET_RAW
-    network_mode: host
     environment:
-      # Must be root to manage the host firewall (this image expects it).
       - PUID=0
       - PGID=0
       - TZ=America/New_York

@@ -1,0 +1,18 @@
+# Copy to action.d/cloudflare-token.local on natto
+# (/srv/fail2ban/config/fail2ban/action.d/cloudflare-token.local), fill the
+# token, chmod 0600. fail2ban auto-merges *.local OVER the stock
+# *.conf, so this only supplies the secret — it does not redefine the
+# action. DO NOT COMMIT THE FILLED VERSION (.gitignore excludes *.local).
+#
+# Confirm the exact [Init] parameter names your image's action expects:
+#   docker exec fail2ban cat /etc/fail2ban/action.d/cloudflare-token.conf
+# Modern fail2ban uses `cftoken` (a Bearer API token). Older variants used
+# `cftoken` + `cfuser`; match whatever that file declares.
+#
+# Cloudflare token scope (create at dash.cloudflare.com → API Tokens):
+#   Account → Account Filter Lists → Edit         (IP Access Rules)
+#   Zone   → Zone → Read         on nthncrtr.com  (zone lookup)
+# Nothing else. This token can only manage firewall/IP rules.
+
+[Init]
+cftoken =

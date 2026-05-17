@@ -1,0 +1,7 @@
+# The per-tunnel credentials file is a secret (it authenticates this
+# tunnel to Cloudflare). It lives only at /srv/cloudflared/credentials.json
+# on natto, mode 0600 — never in the repo. cert.pem (from `cloudflared
+# tunnel login`) is operator-local and also never committed.
+credentials.json
+*.json
+cert.pem

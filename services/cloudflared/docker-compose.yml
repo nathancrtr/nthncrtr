@@ -1,0 +1,45 @@
+# cloudflared — Cloudflare Tunnel for the ONE public service, Jellyfin.
+# Managed by deploy.sh (sudo ./deploy.sh cloudflared).
+#
+# WHY A TUNNEL (and not a router port-forward): this is GFiber. GFiber
+# reserves inbound WAN 443 for its own management UI, its port-forward
+# feature forwards to a phantom device (a MAC that is neither of natto's
+# NICs), and its only working "expose" is DMZ — which exposes ALL of natto
+# (SSH, Caddy admin :2019, Pi-hole, every *arr) to the internet. All three
+# are dead ends (full saga: services/jellyfin/README.md, WORKLIST 6.6).
+# A tunnel dials OUT to Cloudflare, so GFiber is irrelevant: no forward, no
+# DMZ, no static-vs-DHCP fight. It also scopes perfectly — the ingress
+# rules below expose EXACTLY play.nthncrtr.com → Jellyfin and nothing else
+# on natto, which DMZ could never do.
+#
+# Locally-managed tunnel (config.yml is version-controlled here; the
+# per-tunnel credentials.json is the secret, gitignored, lives only at
+# /srv/cloudflared/credentials.json mode 0600). The tunnel UUID is filled
+# into config.yml on natto by the operator after `cloudflared tunnel
+# create` — see README.
+#
+# network_mode: host so `service: http://localhost:8096` in config.yml
+# reaches Jellyfin (itself network_mode: host). cloudflared only makes
+# OUTBOUND connections (to Cloudflare's edge + to localhost) — host net is
+# safe and needs no published ports / caps.
+#
+# Inside-LAN clients do NOT use this tunnel: Pi-hole split-horizon keeps
+# them on Caddy :443 → Jellyfin (no Cloudflare round-trip for local 4k).
+# Only external clients traverse Cloudflare. One PublishedServerUrl
+# (https://play.nthncrtr.com, no port) works both ways.
+services:
+  cloudflared:
+    image: cloudflare/cloudflared:latest
+    container_name: cloudflared
+    command: tunnel --no-autoupdate --config /etc/cloudflared/config.yml run
+    network_mode: host
+    user: "0:0"
+    read_only: true
+    cap_drop:
+      - ALL
+    security_opt:
+      - no-new-privileges:true
+    volumes:
+      - ./config.yml:/etc/cloudflared/config.yml:ro
+      - ./credentials.json:/etc/cloudflared/credentials.json:ro
+    restart: unless-stopped

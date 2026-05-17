@@ -77,34 +77,30 @@ starmaya.nthncrtr.com {
 	reverse_proxy 100.65.46.92:8080
 }
 
-# Jellyfin — the ONE deliberately internet-exposed service (trusted users,
-# per-user accounts; operator decision, WORKLIST 6.6). The scoping mechanism
-# lives in this address line, so read carefully before touching it:
+# Jellyfin — the ONE internet-exposed service (operator decision, WORKLIST
+# 6.6). This block is the INSIDE-ONLY path. Read before touching:
 #
-#  - ":8443" is the ONLY port the home router port-forwards: WAN 8443 →
-#    natto:8443 (NOT WAN 443 — GFiber reserves inbound 443 for its own
-#    management UI, answers it with a self-signed cert and never forwards
-#    it; external clients then get a cert error / 408 and nothing reaches
-#    Caddy. Lesson logged in services/jellyfin/README.md). Every other
-#    vhost above is :443-implicit and therefore stays tailnet-only exactly
-#    as before — do NOT add :8443 to any of them or you silently put it on
-#    the public internet, and do NOT change the forward to 443.
-#  - ":443" is also listed so an inside client typing the bare name still
-#    works (Pi-hole split-horizon points play.nthncrtr.com at natto's LAN
-#    IP). But the advertised PublishedServerUrl is :8443 everywhere, so
-#    inside and outside use one identical URL. An explicit host:443 site is
-#    more specific than the `:443 { abort }` catch-all below, so only THIS
-#    host is served on 443 — the catch-all still swallows every other name.
+#  - PUBLIC ingress is NOT here: it's a Cloudflare Tunnel
+#    (services/cloudflared) — cloudflared dials out and maps
+#    play.nthncrtr.com → Jellyfin directly. Caddy is deliberately NOT in
+#    the public path (GFiber can't port-forward — reserved 443 /
+#    phantom-device / DMZ=all; full saga in services/jellyfin/README.md).
+#  - This `play.nthncrtr.com` block exists so INSIDE/LAN clients reach
+#    Jellyfin by the same hostname without a Cloudflare round-trip:
+#    Pi-hole split-horizon points play.nthncrtr.com at natto's LAN IP →
+#    this :443 site → Jellyfin. One PublishedServerUrl
+#    (https://play.nthncrtr.com, no port) works in (here) and out (tunnel).
+#  - It is :443-implicit like every other vhost — NOT a router-forward
+#    target, nothing here is reachable from the internet (the tunnel is).
+#    An explicit host:443 site is more specific than the `:443 { abort }`
+#    catch-all below, so only THIS host is served; the catch-all still
+#    swallows every other name.
 #  - NO `import authelia`: forward_auth breaks Jellyfin's native TV/phone
-#    clients (operator decision, WORKLIST 6.4/6.6). Jellyfin's own per-user
-#    accounts + the fail2ban jail (services/fail2ban) are the only barrier.
-#  - The cert still issues fine: the global DNS-01 challenge does not need
-#    the host reachable on 443, so the non-standard :8443 is a non-issue.
-#  - The name is "play", NOT "jellyfin", on purpose: this is the only
-#    publicly-resolvable host, and `jellyfin.*` is exactly what automated
-#    Jellyfin-CVE scanners enumerate. Do NOT "fix" it to match the service
-#    name (operator decision, WORKLIST 6.6).
-play.nthncrtr.com:443, play.nthncrtr.com:8443 {
+#    clients (WORKLIST 6.4/6.6). Jellyfin's own per-user accounts + the
+#    fail2ban jail (services/fail2ban, Cloudflare-edge bans) are the gate.
+#  - Name is "play", NOT "jellyfin", on purpose: `jellyfin.*` is exactly
+#    what automated Jellyfin-CVE scanners enumerate. Do NOT rename it.
+play.nthncrtr.com {
 	reverse_proxy 127.0.0.1:8096
 }
 

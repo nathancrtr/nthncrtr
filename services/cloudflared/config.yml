@@ -1,0 +1,26 @@
+# Cloudflare Tunnel ingress — version-controlled. Deployed to
+# /srv/cloudflared/config.yml by deploy.sh.
+#
+# The `tunnel:` UUID below is a PLACEHOLDER. It is filled in on natto only,
+# after the operator runs `cloudflared tunnel create play` (see README) —
+# the UUID is per-tunnel and pairs with the gitignored credentials.json.
+# deploy.sh will NOT overwrite a /srv copy whose UUID is already filled
+# (it warns instead) so this placeholder never clobbers a live tunnel.
+tunnel: REPLACE_WITH_TUNNEL_UUID
+credentials-file: /etc/cloudflared/credentials.json
+
+# Be conservative on the origin: cloudflared only exposes what is listed
+# here. play.nthncrtr.com → Jellyfin directly (localhost:8096, host net).
+# Everything else returns 404 — nothing else on natto is reachable via the
+# tunnel, by construction. This is the scoping guarantee that replaces the
+# old ":8443-only" Caddy trick.
+ingress:
+  - hostname: play.nthncrtr.com
+    service: http://localhost:8096
+  - service: http_status:404
+
+# Jellyfin needs websockets + long media streams; cloudflared handles both
+# by default. originRequest tuning kept minimal and explicit:
+originRequest:
+  connectTimeout: 30s
+  noTLSVerify: false

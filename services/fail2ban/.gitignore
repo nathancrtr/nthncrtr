@@ -1,13 +1,19 @@
 # The fail2ban container writes runtime state into config/ on natto
-# (fail2ban.sqlite3, the image's generated jail.local, action.d/, logs).
-# Only our two hand-written rule files are version-controlled; everything
-# else under config/ is container-generated and must never be committed.
+# (fail2ban.sqlite3, the image's generated jail.local, stock action.d/,
+# logs). Only our hand-written rule files + the secret TEMPLATE are
+# version-controlled; everything else under config/ — including the real
+# cloudflare-token.local secret — must never be committed.
 config/*
 !config/fail2ban/
 config/fail2ban/*
 !config/fail2ban/filter.d/
 !config/fail2ban/jail.d/
+!config/fail2ban/action.d/
 config/fail2ban/filter.d/*
 config/fail2ban/jail.d/*
+config/fail2ban/action.d/*
 !config/fail2ban/filter.d/jellyfin.conf
 !config/fail2ban/jail.d/jellyfin.conf
+!config/fail2ban/action.d/cloudflare-token.local.example
+# Belt-and-suspenders: never commit the real secret no matter where it lands
+*.local

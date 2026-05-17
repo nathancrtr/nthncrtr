@@ -19,56 +19,49 @@ Caddyfile or the router.
 | Container | `jellyfin` |
 | Image | `lscr.io/linuxserver/jellyfin:latest` |
 | Networking | `network_mode: host` — binds `8096` (+ `8920`, `1900/udp`, `7359/udp`) directly on natto. Not bridge/published; see compose header (DNS-rebinding guard / stable `127.0.0.1` proxy) |
-| Reachability | **Public** at `https://play.nthncrtr.com:8443` (one URL, inside + out — the `:8443` is mandatory, GFiber reserves WAN 443; see below); raw `http://natto:8096` / tailnet still work |
+| Reachability | **Public** at `https://play.nthncrtr.com` (one clean URL, no port, inside + out) via Cloudflare Tunnel; raw `http://natto:8096` / tailnet still work |
 
 ### How "public, but only Jellyfin" actually works
 
-This is the only `*.nthncrtr.com` name reachable from the internet. The
-containment is deliberate and lives in three coupled places — change one
-and you must reason about the other two:
+This is the only `*.nthncrtr.com` name reachable from the internet, and the
+containment is now structural — a Cloudflare Tunnel maps exactly one
+hostname to one service:
 
-1. **Caddy** (`services/caddy/Caddyfile`): the block is
-   `play.nthncrtr.com:443, play.nthncrtr.com:8443`. `:8443` is a
-   dedicated listener; every other vhost is `:443` only. **No
-   `import authelia`** — forward_auth breaks Jellyfin's native TV/phone
-   clients (WORKLIST 6.4/6.6).
-2. **Router** (operator-managed, not in repo): port-forwards WAN
-   `tcp/8443` → `192.168.1.240:8443`. **Not 443.** The GFiber router
-   *reserves inbound WAN 443 for its own management UI* — it answers `:443`
-   with a self-signed cert and never forwards it (symptom: external clients
-   get a cert error or HTTP 408, and *nothing* reaches Caddy). So the
-   external entrypoint is `:8443`, matched to natto's `:8443`. Because only
-   `:8443` is forwarded and only the Jellyfin block listens there, **only
-   Jellyfin is exposed**. Forwarding `:443` would (a) not work at all on
-   GFiber and (b) if it did, expose every other vhost — do not.
-3. **DNS, split-horizon** (one `PublishedServerUrl` =
-   `https://play.nthncrtr.com:8443` works both ways):
-   - *Outside* — Cloudflare A record `play` → home WAN IP (grey-cloud,
-     proxy off), kept current by `services/ddns`. Client uses `:8443`;
-     GFiber forwards WAN 8443 → natto 8443.
-   - *Inside* — Pi-hole local DNS `play.nthncrtr.com` → natto LAN IP;
-     client uses the same `:8443`, hitting Caddy's `:8443` listener
-     directly (no NAT hairpin). Caddy still also listens `:443` for that
-     host as a courtesy for anyone typing the bare name on the LAN, but
-     the advertised/working URL everywhere is `:8443`.
+1. **Cloudflare Tunnel** (`services/cloudflared`): `cloudflared` on natto
+   dials **out** to Cloudflare and serves only the ingress rule
+   `play.nthncrtr.com → http://localhost:8096` (Jellyfin). Nothing else on
+   natto is reachable through it, by construction — better scoping than any
+   router/Caddy trick. The router is bypassed entirely.
+2. **Inside path** (`services/caddy/Caddyfile` + Pi-hole split-horizon):
+   LAN clients must *not* round-trip through Cloudflare for local 4k.
+   Pi-hole resolves `play.nthncrtr.com` → natto's LAN IP → Caddy's
+   `play.nthncrtr.com` `:443` block → Jellyfin. **No `import authelia`** —
+   forward_auth breaks Jellyfin's native TV/phone clients (WORKLIST
+   6.4/6.6). Caddy is *not* in the public path (Cloudflare provides the
+   edge cert there); this block is inside-only.
+3. **One `PublishedServerUrl` = `https://play.nthncrtr.com`** (no port)
+   is correct for both: outside resolves to Cloudflare → tunnel → Jellyfin;
+   inside resolves (split-horizon) to Caddy → Jellyfin.
 
-Cert issuance is unaffected: the DNS-01 challenge doesn't need the host
-reachable on any port, so Caddy holds a valid Let's Encrypt cert for
-`play.nthncrtr.com` regardless of the non-standard `:8443`.
-
-> **GFiber lesson (cost a debugging round):** a `self signed certificate`
-> from an external client + zero connections in `journalctl -u caddy` +
-> a browser 408 == the GFiber box is answering WAN 443 itself, not
-> forwarding it. The fix is *any* non-443 external port → natto:8443; it
-> is not a Caddy/Jellyfin/cert fault (Caddy's cert is valid LE).
+> **Why a tunnel and not a router port-forward (cost several debugging
+> rounds — do not retry the forward):** this is GFiber. It (a) *reserves
+> inbound WAN 443* for its own management UI (answers with a self-signed
+> cert, never forwards — symptom: external cert error / HTTP 408, zero
+> connections in `journalctl -u caddy`); (b) its port-forward feature
+> targets a *phantom device* — a MAC that is neither of natto's NICs —
+> because natto is static-IP and GFiber never DHCP-learned it; (c) its
+> only working "expose" is **DMZ = all ports**, which would put SSH, the
+> Caddy admin API, Pi-hole and every *arr on the internet. All three are
+> dead ends. An outbound tunnel sidesteps every one of them.
 
 #### Split-horizon: local DNS records on this Pi-hole (v6)
 
-The *inside* half is **not optional and not automatic** — without it an
-inside client resolves `play.nthncrtr.com` to the home WAN IP, bounces off
-the router (NAT hairpin), and the **router** (not Jellyfin, not Caddy)
-returns `Forbidden: Rejected request from RFC1918 IP to public server
-address`. That exact symptom = the split-horizon record is missing.
+The *inside* half is **not optional**. Without it, an inside client
+resolves `play.nthncrtr.com` to Cloudflare's proxied edge and every LAN
+stream hairpins out to Cloudflare and back through the tunnel — it "works"
+but adds latency, burns home uplink, and pushes local 4k through
+Cloudflare's video-proxying gray area for no reason. The split-horizon
+record keeps LAN traffic on `Caddy :443 → Jellyfin`, entirely local.
 
 This Pi-hole is **v6** (Core v6.x / FTL v6.x). v6 has *two* places a local
 A record can live; know both:
@@ -87,31 +80,37 @@ A record can live; know both:
 Both are **runtime state on natto, not in this repo.** They are captured by
 the nightly `/srv` backup (Pi-hole config lives under `/srv/pihole`), so a
 restore brings them back — but a **from-scratch natto rebuild without a
-backup restore loses split-horizon**, and the symptom is the router
-`Forbidden` above. Re-add per WORKLIST 6.6 step 3 after any such rebuild.
+backup restore loses split-horizon** (LAN streams then hairpin through
+Cloudflare). Re-add per WORKLIST 6.6 after any such rebuild.
 
 Verify the record from natto:
 
 ```sh
-dig +short play.nthncrtr.com @127.0.0.1   # must be natto's LAN IP, NOT the WAN IP
+dig +short play.nthncrtr.com @127.0.0.1   # must be natto's LAN IP, NOT a Cloudflare edge IP
 ```
 
 ### Hardening (this login now faces the internet)
 
-- **fail2ban** (`services/fail2ban`) bans brute-force source IPs at the
-  host firewall. It is only useful once Jellyfin's **Known proxies =
-  `127.0.0.1`** is set (Dashboard → Networking) so the auth log carries
-  the real client IP instead of Caddy's `127.0.0.1`. **Required step.**
+- **fail2ban** (`services/fail2ban`) bans brute-force IPs at **Cloudflare's
+  edge** via the API (host firewall is useless — attackers hit Cloudflare,
+  not natto, through the tunnel). Only effective once Jellyfin's **Known
+  proxies = `127.0.0.1`** is set (Dashboard → Networking) so the auth log
+  carries the real client IP — `cloudflared` connects from localhost.
+  **Required step.** See `services/fail2ban/README.md`.
 - **Per-user accounts**, each non-admin where appropriate, library access
   scoped, Downloads/Live-TV/management off as desired. Strong password on
   *every* account including admin.
-- Dashboard → Networking → **disable UPnP automatic port mapping** (the
-  router forward is explicit; don't let Jellyfin punch its own).
+- Dashboard → Networking → **disable UPnP automatic port mapping** — there
+  is no inbound port to map (the tunnel is outbound); don't let Jellyfin
+  punch a hole.
 - Keep the image current (`docker compose pull`) — CVE exposure now
   matters; this is a public service.
-- Layer-2 (follow-up, not shipped): add `caddy-ratelimit` to
-  `services/caddy/build.sh` to throttle `/Users/AuthenticateByName` at the
-  edge. Tracked in WORKLIST 6.6.
+- Set Dashboard → Playback → **Internet streaming bitrate limit**
+  (~10–15 Mbps): protects the home uplink and limits how much traffic
+  traverses Cloudflare's video-proxying gray area.
+- Layer-2 (follow-up, not shipped): a Cloudflare WAF/Rate-Limiting rule on
+  the Jellyfin login path as an always-on coarse layer in front of the
+  per-IP fail2ban jail. Tracked in WORKLIST 6.6.
 
 ### Why config on internal disk, not the 5TB
 
@@ -124,9 +123,12 @@ itself stays on `/mnt/media/video` and is bind-mounted **read-only**.
 ### History: it used to be Tailscale-only
 
 Through WORKLIST 6.2 Jellyfin was Tailscale-only / LAN (same posture as
-Nextcloud, which still is). WORKLIST 6.6 changed that to public-for-trusted-
-users via the router-port-forward model above. Nextcloud did **not** change
-— it remains Tailscale-only with no Caddy/Cloudflare route.
+Nextcloud, which still is). WORKLIST 6.6 made it public-for-trusted-users.
+That mission first tried a router port-forward (+ `services/ddns`); GFiber
+made that impossible (see the tunnel callout above), so it pivoted to the
+Cloudflare Tunnel model documented here — `services/ddns` was removed.
+Nextcloud did **not** change — it remains Tailscale-only with no
+Caddy/Cloudflare route.
 
 ## Hardware transcoding (Intel QuickSync)
 
@@ -216,8 +218,11 @@ and is not duplicated by this service (it is read-only here).
 ## Activation status
 
 Stood up Tailscale-only alongside Nextcloud after the Pi → Beelink
-migration (WORKLIST 6.2). Made public-for-trusted-users in WORKLIST 6.6
-(Caddy `:8443` route + `services/ddns` + `services/fail2ban` + router
-port-forward + Cloudflare/Pi-hole split-horizon). Comes up via
-`bootstrap/natto.sh` + `deploy.sh jellyfin ddns fail2ban`; the router /
-Cloudflare / Known-proxies steps are operator actions (see WORKLIST 6.6).
+migration (WORKLIST 6.2). Made public-for-trusted-users in WORKLIST 6.6 via
+a **Cloudflare Tunnel** (`services/cloudflared`) + `services/fail2ban`
+(Cloudflare-edge bans) + Pi-hole split-horizon for the inside path. Comes
+up via `bootstrap/natto.sh` + `deploy.sh jellyfin cloudflared fail2ban`;
+the `cloudflared tunnel` login/create/route, the fail2ban Cloudflare token,
+the Pi-hole split-horizon record and Jellyfin Known-proxies/per-user
+accounts are operator actions (see WORKLIST 6.6 and the per-service
+READMEs).

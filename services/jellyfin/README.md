@@ -39,15 +39,43 @@ compose's `group_add` carries natto's host `render` (gid `991`) and `video`
 to another host, re-check `getent group render video` there and update the
 compose.
 
-After first start: **Dashboard → Playback → Transcoding**, set hardware
-acceleration to *Intel QuickSync (QSV)*, enable the codecs the iGPU
-supports, save. Verify a forced transcode shows up as `qsv`:
+**QSV is mandatory for the 4k library, not optional polish.** With hardware
+acceleration off, a 4k HDR remux (HEVC 10-bit + HDR→SDR tone-map + encode,
+all in software) pegs the N95's 4 cores at ~350% CPU and buffers within
+seconds — it *looks* like a network problem but is 100% CPU. The LG webOS
+client (and most TV-native apps) can't decode TrueHD/Atmos or take HDR HEVC
+untouched, so they force this transcode; QSV is what makes it real-time.
+
+### The config is NOT in this repo — it must be re-applied on a rebuild
+
+QSV lives in `/srv/jellyfin/config/encoding.xml` (runtime config, not
+version-controlled). The nightly `natto-*.tgz` backs it up, so a *restore*
+brings it back — but a **from-scratch natto rebuild without a backup restore
+silently reverts to software transcoding** (the buffering returns). After
+any such rebuild, re-apply via **Dashboard → Playback → Transcoding** (set
+HW accel = *Intel QuickSync (QSV)*, QSV device `/dev/dri/renderD128`, enable
+VPP tone-mapping, add `hevc`/`vp9`/`av1` to HW decode codecs, save), or edit
+`encoding.xml` directly. The keys that matter (verified working 2026-05-16):
+
+```xml
+<HardwareAccelerationType>qsv</HardwareAccelerationType>
+<QsvDevice>/dev/dri/renderD128</QsvDevice>
+<EnableVppTonemapping>true</EnableVppTonemapping>          <!-- HDR→SDR on the iGPU -->
+<EnableIntelLowPowerH264HwEncoder>true</EnableIntelLowPowerH264HwEncoder>
+<EnableIntelLowPowerHevcHwEncoder>true</EnableIntelLowPowerHevcHwEncoder>
+<HardwareDecodingCodecs> h264, hevc, vc1, vp9, av1 </HardwareDecodingCodecs>
+```
+
+Restart the container after editing. Verify the pipeline is hardware (not
+`libx264`/`tonemapx`): during a transcoded playback the ffmpeg line should
+show `hwaccel vaapi` for decode, `-codec:v:0 h264_qsv` for encode, and CPU
+should sit at a fraction of one core:
 
 ```sh
 docker exec jellyfin ls -l /dev/dri                       # renderD128 visible
-docker logs jellyfin | grep -i vaapi                      # init on startup
-# during a transcoded playback:
-docker exec jellyfin sh -c 'cat /proc/*/cmdline 2>/dev/null | tr "\0" " " | grep -o "ffmpeg.*qsv" | head -1'
+docker logs jellyfin --since 2m | grep -i 'hwaccel types'  # qsv listed at startup
+# during a transcoded playback — expect h264_qsv / hwaccel vaapi, NOT libx264:
+docker exec jellyfin sh -c 'ps -o pcpu,args -C ffmpeg | grep -oE "h264_qsv|libx264|hwaccel [a-z]+"'
 ```
 
 ## First-run setup

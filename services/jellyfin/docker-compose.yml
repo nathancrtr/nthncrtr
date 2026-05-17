@@ -37,9 +37,24 @@
 # now (the Pi-era 512m caps on radarr/sonarr are stale), and transcoding is
 # memory-hungry by design.
 #
-# Ports:
-#   8096      — WebUI / API (matches the URLs above)
-#   7359/udp  — client auto-discovery on the LAN (optional but harmless)
+# Networking: host mode (NOT bridge + published ports). Why this matters and
+# is not optional here:
+#   - Caddy is native on natto and reverse-proxies to 127.0.0.1:8096. Under
+#     bridge+published-ports, the in-container source of that hop is the
+#     Docker bridge gateway — an RFC1918 address that also CHANGES whenever
+#     the compose network is recreated. Jellyfin's 10.9+ DNS-rebinding guard
+#     then sees "RFC1918 client → public Host (play.nthncrtr.com)" and
+#     returns `Forbidden: Rejected request from RFC1918 IP to public server
+#     address`. Host mode makes Jellyfin see the proxy as 127.0.0.1
+#     (loopback, inherently trusted) so the guard never fires.
+#   - 127.0.0.1 is then the correct, STABLE value for Jellyfin Dashboard →
+#     Networking → "Known proxies" — which is exactly what services/fail2ban
+#     already documents (that instruction was wrong under bridge mode).
+#   - This is also Jellyfin's own recommended mode behind a same-host proxy.
+# Host mode binds 8096 (+ 8920, 1900/udp DLNA, 7359/udp discovery) directly
+# on natto's interfaces — same LAN/tailnet reach as the old published 8096,
+# and still NOT public (only Caddy's :8443 is router-forwarded). `ports:` is
+# intentionally absent: it is invalid/ignored with network_mode host.
 services:
   jellyfin:
     image: lscr.io/linuxserver/jellyfin:latest
@@ -62,7 +77,5 @@ services:
     group_add:
       - "991"   # render (natto: getent group render)
       - "44"    # video  (natto: getent group video)
-    ports:
-      - "8096:8096"
-      - "7359:7359/udp"
+    network_mode: host
     restart: unless-stopped

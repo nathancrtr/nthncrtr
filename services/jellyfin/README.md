@@ -18,7 +18,7 @@ Caddyfile or the router.
 | Media (read-only) | `/mnt/media/video/` → `/media/video` in-container |
 | Container | `jellyfin` |
 | Image | `lscr.io/linuxserver/jellyfin:latest` |
-| Host port | `8096` → `8096` (+ `7359/udp` LAN discovery) |
+| Networking | `network_mode: host` — binds `8096` (+ `8920`, `1900/udp`, `7359/udp`) directly on natto. Not bridge/published; see compose header (DNS-rebinding guard / stable `127.0.0.1` proxy) |
 | Reachability | **Public** at `https://play.nthncrtr.com` (one URL, inside + out); raw `http://natto:8096` / tailnet still work |
 
 ### How "public, but only Jellyfin" actually works

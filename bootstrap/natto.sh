@@ -376,9 +376,9 @@ Next steps (operator):
   2b. Public Jellyfin (the ONE internet-exposed service — WORKLIST 6.6):
        - Home router: port-forward WAN tcp/443 → natto-LAN-IP:8443
          (NOT :443 — forwarding :443 exposes every Caddy vhost).
-       - Cloudflare DNS: add A record jellyfin → home WAN IP, proxy OFF
+       - Cloudflare DNS: add A record play → home WAN IP, proxy OFF
          (grey cloud). cloudflare-ddns keeps it current thereafter.
-       - Pi-hole: add local DNS jellyfin.nthncrtr.com → natto LAN IP
+       - Pi-hole: add local DNS play.nthncrtr.com → natto LAN IP
          (split-horizon; dodges NAT hairpin for inside clients).
        - Jellyfin UI → Dashboard → Networking → Known proxies = 127.0.0.1
          (REQUIRED, or fail2ban bans 127.0.0.1 instead of attackers).

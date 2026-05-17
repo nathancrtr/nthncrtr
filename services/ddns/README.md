@@ -1,20 +1,20 @@
 # cloudflare-ddns
 
-Keeps **`jellyfin.nthncrtr.com`** pointed at this home's current WAN IP.
+Keeps **`play.nthncrtr.com`** pointed at this home's current WAN IP.
 Exists only because Jellyfin is the one public service (router port-forward —
 see `services/jellyfin/README.md` and WORKLIST 6.6). One container, no
 sidecar, no persistent state.
 
 ## Why this is needed
 
-`jellyfin.nthncrtr.com` is the **only** `*.nthncrtr.com` record that points
+`play.nthncrtr.com` is the **only** `*.nthncrtr.com` record that points
 at the home's public WAN IP instead of natto's Tailscale IP. Residential
 ISPs rotate that WAN IP without warning. When it rotates:
 
 - **External** Jellyfin access breaks until the A record catches up — this
   container fixes that within `UPDATE_CRON` (5 min).
 - **Internal** access is unaffected: inside clients resolve
-  `jellyfin.nthncrtr.com` via Pi-hole split-horizon (→ natto LAN IP), never
+  `play.nthncrtr.com` via Pi-hole split-horizon (→ natto LAN IP), never
   via Cloudflare. So a stale record degrades remote-only, never the house.
 
 Every other `*.nthncrtr.com` record is a Tailscale-IP A record and is **not
@@ -64,7 +64,7 @@ docker restart cloudflare-ddns
 Sanity-check the record actually tracks the WAN IP:
 
 ```sh
-dig +short jellyfin.nthncrtr.com @1.1.1.1      # should equal the home WAN IP
+dig +short play.nthncrtr.com @1.1.1.1      # should equal the home WAN IP
 curl -s https://1.1.1.1/cdn-cgi/trace | grep ip # the home WAN IP
 ```
 

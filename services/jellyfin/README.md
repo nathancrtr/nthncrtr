@@ -19,7 +19,7 @@ Caddyfile or the router.
 | Container | `jellyfin` |
 | Image | `lscr.io/linuxserver/jellyfin:latest` |
 | Host port | `8096` → `8096` (+ `7359/udp` LAN discovery) |
-| Reachability | **Public** at `https://jellyfin.nthncrtr.com` (one URL, inside + out); raw `http://natto:8096` / tailnet still work |
+| Reachability | **Public** at `https://play.nthncrtr.com` (one URL, inside + out); raw `http://natto:8096` / tailnet still work |
 
 ### How "public, but only Jellyfin" actually works
 
@@ -28,7 +28,7 @@ containment is deliberate and lives in three coupled places — change one
 and you must reason about the other two:
 
 1. **Caddy** (`services/caddy/Caddyfile`): the block is
-   `jellyfin.nthncrtr.com:443, jellyfin.nthncrtr.com:8443`. `:8443` is a
+   `play.nthncrtr.com:443, play.nthncrtr.com:8443`. `:8443` is a
    dedicated listener; every other vhost is `:443` only. **No
    `import authelia`** — forward_auth breaks Jellyfin's native TV/phone
    clients (WORKLIST 6.4/6.6).
@@ -38,9 +38,9 @@ and you must reason about the other two:
    `:443` instead would put Navidrome / Pi-hole / the *arrs / roaster on
    the internet — do not.
 3. **DNS, split-horizon**:
-   - *Outside* — Cloudflare A record `jellyfin` → home WAN IP (grey-cloud,
+   - *Outside* — Cloudflare A record `play` → home WAN IP (grey-cloud,
      proxy off), kept current by `services/ddns`.
-   - *Inside* — Pi-hole local DNS `jellyfin.nthncrtr.com` → natto LAN IP,
+   - *Inside* — Pi-hole local DNS `play.nthncrtr.com` → natto LAN IP,
      so inside clients hit the `:443` listener directly and don't depend
      on router NAT hairpin. One `PublishedServerUrl` works both ways.
 

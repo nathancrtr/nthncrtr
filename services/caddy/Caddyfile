@@ -86,7 +86,7 @@ starmaya.nthncrtr.com {
 #    stays tailnet-only exactly as before — do NOT add :8443 to any of them
 #    or you silently put it on the public internet.
 #  - ":443" is also listed so *inside* clients reach Jellyfin by the same
-#    hostname+TLS (Pi-hole split-horizon points jellyfin.nthncrtr.com at
+#    hostname+TLS (Pi-hole split-horizon points play.nthncrtr.com at
 #    natto's LAN IP to dodge NAT hairpin). An explicit host:443 site is more
 #    specific than the `:443 { abort }` catch-all below, so only THIS host
 #    is served on 443 — the catch-all still swallows every other name.
@@ -95,7 +95,11 @@ starmaya.nthncrtr.com {
 #    accounts + the fail2ban jail (services/fail2ban) are the only barrier.
 #  - The cert still issues fine: the global DNS-01 challenge does not need
 #    the host reachable on 443, so the non-standard :8443 is a non-issue.
-jellyfin.nthncrtr.com:443, jellyfin.nthncrtr.com:8443 {
+#  - The name is "play", NOT "jellyfin", on purpose: this is the only
+#    publicly-resolvable host, and `jellyfin.*` is exactly what automated
+#    Jellyfin-CVE scanners enumerate. Do NOT "fix" it to match the service
+#    name (operator decision, WORKLIST 6.6).
+play.nthncrtr.com:443, play.nthncrtr.com:8443 {
 	reverse_proxy 127.0.0.1:8096
 }
 

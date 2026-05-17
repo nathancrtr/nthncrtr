@@ -1,7 +1,7 @@
-# cloudflare-ddns — keeps the jellyfin.nthncrtr.com A record pointed at this
+# cloudflare-ddns — keeps the play.nthncrtr.com A record pointed at this
 # home's current WAN IP. Managed by deploy.sh (sudo ./deploy.sh ddns).
 #
-# WHY THIS EXISTS: jellyfin.nthncrtr.com is the one public service (router
+# WHY THIS EXISTS: play.nthncrtr.com is the one public service (router
 # port-forward, WORKLIST 6.6). Its A record must track the home's WAN IP,
 # which a residential ISP rotates without notice. When it rotates and this
 # is not running, external Jellyfin access silently dies (inside access is
@@ -35,7 +35,7 @@ services:
     environment:
       # Exactly one name — do NOT widen this to a wildcard; only Jellyfin is
       # public and only its record should ever be rewritten by automation.
-      - DOMAINS=jellyfin.nthncrtr.com
+      - DOMAINS=play.nthncrtr.com
       - PROXIED=false
       - IP6_PROVIDER=none          # IPv4-only home; no AAAA churn
       - UPDATE_CRON=@every 5m

@@ -1,7 +1,7 @@
 # fail2ban
 
 Brute-force protection for the **public Jellyfin login**. Exists only
-because `jellyfin.nthncrtr.com` is internet-exposed with **no Authelia** in
+because `play.nthncrtr.com` is internet-exposed with **no Authelia** in
 front (forward_auth breaks Jellyfin's native clients — WORKLIST 6.4/6.6), so
 Jellyfin's own login is the sole credential gate and its built-in lockout is
 weak. One `lscr.io/linuxserver/fail2ban` container.

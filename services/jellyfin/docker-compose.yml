@@ -3,11 +3,11 @@
 #
 # Reachability: the ONE deliberately internet-exposed service (trusted users,
 # per-user accounts — operator decision, WORKLIST 6.6). Reached at:
-#   https://jellyfin.nthncrtr.com           (public AND inside, single URL)
+#   https://play.nthncrtr.com           (public AND inside, single URL)
 #   http://natto:8096                       (LAN, raw — still works)
 #   http://natto.tailaf7ea6.ts.net:8096     (tailnet, raw — still works)
 # Public path: home-router WAN 443 → natto:8443 → the Caddy
-# `jellyfin.nthncrtr.com:8443` block (services/caddy/Caddyfile) → here. NO
+# `play.nthncrtr.com:8443` block (services/caddy/Caddyfile) → here. NO
 # Authelia on this route (forward_auth breaks native TV/phone clients —
 # WORKLIST 6.4/6.6); Jellyfin's own accounts + the fail2ban jail
 # (services/fail2ban) are the only barrier. Caddy is :8443-scoped so ONLY
@@ -52,7 +52,7 @@ services:
       # because Pi-hole split-horizon resolves this hostname to natto's LAN
       # IP for inside clients and Cloudflare resolves it to the home WAN IP
       # for outside clients — both terminate at the same Caddy jellyfin block.
-      - JELLYFIN_PublishedServerUrl=https://jellyfin.nthncrtr.com
+      - JELLYFIN_PublishedServerUrl=https://play.nthncrtr.com
     volumes:
       - ./config:/config
       - ./cache:/cache

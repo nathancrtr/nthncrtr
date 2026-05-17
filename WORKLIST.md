@@ -709,7 +709,14 @@ ingress (not tailnet-share / Funnel / Cloudflare Tunnel); **dedicated Caddy
 `:8443` listener** so ONLY Jellyfin is exposed (Navidrome/Pi-hole/*arrs/
 roaster stay tailnet-only, untouched); **per-user accounts**; **no Authelia
 on Jellyfin** (forward_auth breaks native TV/phone clients — consistent with
-6.4's exclusion). DDNS and fail2ban brought into scope explicitly.
+6.4's exclusion). DDNS and fail2ban brought into scope explicitly. Public
+hostname is **`play.nthncrtr.com`, deliberately not `jellyfin.*`**: it's the
+only publicly-resolvable name and `jellyfin.*` is precisely what automated
+Jellyfin-CVE scanners enumerate — the obscure name is real attack-surface
+reduction, not cosmetics. (During live activation an interim
+`jellyfin.nthncrtr.com` A record was created by ddns before the rename; see
+operator step 4 — it must be deleted, it's the exact scanner-bait this
+avoids.)
 
 **Why the dedicated port:** Caddy serves every vhost on one `:443` listener.
 Forwarding WAN `443→443` would expose all of them, and 6.4 chose Authelia
@@ -722,11 +729,11 @@ exactly Jellyfin with zero retrofit to the other services.
 - Operator has router admin access and Cloudflare DNS access for the zone.
 
 **Success criteria (repo side — this mission's committed scope):**
-- `services/caddy/Caddyfile`: `jellyfin.nthncrtr.com:443,
-  jellyfin.nthncrtr.com:8443 → 127.0.0.1:8096`, no `import authelia`;
+- `services/caddy/Caddyfile`: `play.nthncrtr.com:443,
+  play.nthncrtr.com:8443 → 127.0.0.1:8096`, no `import authelia`;
   `caddy adapt` passes.
 - `services/jellyfin/docker-compose.yml`: `PublishedServerUrl =
-  https://jellyfin.nthncrtr.com`; header rewritten.
+  https://play.nthncrtr.com`; header rewritten.
 - `services/ddns/` scaffolded (favonia/cloudflare-ddns; compose +
   secrets.env.example + .gitignore + README), wired into `deploy.sh`
   (default set) + `bootstrap/natto.sh`.
@@ -740,16 +747,22 @@ exactly Jellyfin with zero retrofit to the other services.
 1. Provision `/srv/ddns/secrets.env` (Cloudflare token, Zone:DNS:Edit on
    nthncrtr.com only), mode 0600.
 2. `deploy.sh caddy jellyfin ddns fail2ban` on natto (caddy `adapt`-gated).
-3. Pi-hole local DNS `jellyfin.nthncrtr.com → <natto LAN IP>` + `pihole
+3. Pi-hole local DNS `play.nthncrtr.com → <natto LAN IP>` + `pihole
    reloaddns` (split-horizon; not a container restart, no DNS outage — but
    announce per safety rule 1 before touching Pi-hole).
-4. Cloudflare: A record `jellyfin` → home WAN IP, **proxy OFF (grey
+4. Cloudflare: A record `play` → home WAN IP, **proxy OFF (grey
    cloud)**; confirm no wildcard/more-specific record shadows it.
+   **Also delete the interim `jellyfin` A record** (ID
+   `d57bf0ef23265d2673466c3808902d0f`) that ddns created during live
+   activation before the rename — ddns abandons but does not delete it
+   (`DELETE_ON_STOP=false`, name no longer in `DOMAINS`), leaving a stray
+   public name → home WAN IP. Removing it is the whole point of the
+   obscure name.
 5. Router: port-forward WAN `tcp/443` → `<natto LAN IP>:8443` (NOT :443).
 6. Jellyfin UI: **Known proxies = `127.0.0.1`** (required for fail2ban),
    disable UPnP port-mapping, create the friend's non-admin per-user
    account, strong passwords on all accounts.
-7. Verify: inside `https://jellyfin.nthncrtr.com` (valid cert, login);
+7. Verify: inside `https://play.nthncrtr.com` (valid cert, login);
    outside (cellular) friend streams a title; **QSV engages for a remote
    4k transcode** (services/jellyfin/README.md); **negative test** —
    `pi-hole.nthncrtr.com` / `natto.nthncrtr.com` must FAIL from outside;

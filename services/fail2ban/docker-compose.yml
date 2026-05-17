@@ -1,7 +1,7 @@
 # fail2ban — brute-force protection for the public Jellyfin login. Managed
 # by deploy.sh (sudo ./deploy.sh fail2ban).
 #
-# WHY THIS EXISTS: jellyfin.nthncrtr.com is internet-exposed with NO Authelia
+# WHY THIS EXISTS: play.nthncrtr.com is internet-exposed with NO Authelia
 # in front (forward_auth breaks native clients — WORKLIST 6.4/6.6), so
 # Jellyfin's own login is the only credential gate, and Jellyfin's built-in
 # lockout is weak. This watches Jellyfin's auth log and bans source IPs at

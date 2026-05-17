@@ -59,7 +59,7 @@ These exist because skipping them once would be expensive. Each has a reason:
 5. **Never `--no-verify` git commits.** Never amend published commits. Never force-push.
 6. **Never add `Co-Authored-By: Claude` trailers to commit messages.** Operator preference, applies forever. ([memory](../../.claude/projects/-Users-nathancarter-repos-nthncrtr/memory/feedback_commit_attribution.md))
 7. **Always commit before and after a session.** A clean `git status` at session end means a future session can pick up cleanly.
-8. **Jellyfin is the only internet-exposed service; keep it that way.** Only Caddy's `jellyfin.nthncrtr.com:8443` listener is router-forwarded. Never add `:8443` to another vhost, never advise forwarding WAN `:443→443` (that exposes every vhost), and never put Jellyfin behind `import authelia` (breaks its native clients). The barrier is Jellyfin's per-user accounts + `services/fail2ban`; don't weaken either without saying so explicitly. See WORKLIST 6.6.
+8. **Jellyfin is the only internet-exposed service; keep it that way.** Only Caddy's `play.nthncrtr.com:8443` listener is router-forwarded. Never add `:8443` to another vhost, never advise forwarding WAN `:443→443` (that exposes every vhost), and never put Jellyfin behind `import authelia` (breaks its native clients). The barrier is Jellyfin's per-user accounts + `services/fail2ban`; don't weaken either without saying so explicitly. See WORKLIST 6.6.
 
 ## Workflow patterns (the things that took a while to figure out)
 

@@ -14,7 +14,7 @@
 # Services: caddy navidrome homepage backup qbittorrent radarr sonarr prowlarr nextcloud jellyfin ddns fail2ban authelia pihole starmaya
 # Default (no service args): caddy navidrome homepage backup qbittorrent radarr sonarr prowlarr nextcloud jellyfin ddns fail2ban
 #   — ddns/fail2ban exist only because Jellyfin is public (WORKLIST 6.6):
-#     ddns keeps jellyfin.nthncrtr.com on the WAN IP, fail2ban guards its
+#     ddns keeps play.nthncrtr.com on the WAN IP, fail2ban guards its
 #     login. Both default-on; harmless before their secrets are provisioned.
 #   — pihole is gated behind --yes-pihole (DNS outage for ~30s).
 #   — starmaya must be requested explicitly (deploys to kvass over ssh).
@@ -350,7 +350,7 @@ deploy_ddns() {
   (( DRY_RUN )) && return 0
   if [[ ! -f /srv/ddns/secrets.env ]]; then
     warn "/srv/ddns/secrets.env not found — see services/ddns/secrets.env.example"
-    warn "cloudflare-ddns starts but cannot update jellyfin.nthncrtr.com until the token is provided."
+    warn "cloudflare-ddns starts but cannot update play.nthncrtr.com until the token is provided."
   fi
   compose_up ddns
   sleep 3

@@ -52,6 +52,56 @@ docker exec qbit-port-updater cat /state/forwarded_port      # same file, from s
 
 A common failure mode: `WARN: failed to push port` — usually means qBit's localhost-bypass setting wasn't enabled. Re-check the Web UI Authentication option above.
 
+## *arr grabs vs stack restarts (known failure mode + design)
+
+**Symptom that surfaced this:** a Sonarr/Radarr download appears "extremely
+slow and/or non-functional" while a hand-added torrent works perfectly.
+
+**Root cause:** qBittorrent shares gluetun's network namespace
+(`network_mode: service:gluetun`). A compose change to **either** gluetun or
+qbittorrent makes `docker compose up -d` recreate the gluetun container,
+which tears down and rebuilds the *entire* VPN+qBit stack. `deploy.sh
+qbittorrent` does this every time the compose file changes (e.g. commit
+`9c25f5c` added a gluetun `environment:` block → full recreate at deploy
+time). During the gap qBit's WebUI is unreachable; Sonarr/Radarr log
+*"Unable to retrieve queue and history items from qBittorrent"*. A torrent
+grabbed shortly before — **not yet past the metadata stage**, which is the
+norm on the two **private** indexers here (BeyondHD, TorrentLeech: no
+DHT/PEX, peers only via tracker announce on the forwarded port) — has no
+`.fastresume` to persist, so it does **not** survive the recreate. The 768
+already-seeding music torrents and any in-progress download *do* survive
+(they have resume data); only the just-issued, no-metadata grab is lost.
+
+The *arrs have **no auto-recovery** for a torrent that vanishes from the
+download client: empty queue, no blocklist, no re-search. The episode/movie
+silently reverts to "missing". It reads as "the *arr did nothing".
+
+**Why manual works:** a hand-picked torrent is well-seeded and added when no
+deploy is happening, so it gets metadata immediately and persists.
+
+### Mitigations (in order of effort)
+
+1. **Operational (in place now):** `deploy.sh qbittorrent` prints a `warn`
+   after every run telling the operator to re-trigger Wanted→Missing in
+   Sonarr/Radarr. Zero code risk; relies on the operator acting.
+2. **Don't recreate the stack for tuning-only changes.** Most qBit "deploys"
+   only change `apply-tuning.sh` (applied live via the WebUI API, no
+   restart needed) — yet any compose-file edit still forces a full recreate.
+   A future `deploy.sh` improvement: detect when only non-compose files
+   changed and skip `compose_up` (run `apply-tuning.sh` alone). Bounded,
+   testable, no service-behavior change. **Not yet implemented** — needs a
+   reliable "did the effective compose config actually change" check
+   (`docker compose config --hash`, or compare against the running
+   container's config digest) so it never skips a real recreate.
+3. **Auto-recover after a recreate.** A post-deploy hook that calls the
+   Sonarr/Radarr `MissingEpisodeSearch` / `MoviesSearch` command APIs (keys
+   already in `/srv/homepage/secrets.env`). Highest automation, but couples
+   `deploy.sh` to *arr API surface + keys; defer until option 2 proves
+   insufficient.
+
+Decision: ship #1 now (done), document #2/#3 as the planned path. This is
+deliberately a design note, not silent code — the *arr READMEs link here.
+
 ## Seedbox tuning
 
 natto is a shared household hub (Pi-hole DNS, Jellyfin, Nextcloud, Navidrome), **not** a dedicated seedbox — so the tuning is *generous-but-bounded*, never "unlimited". It is version-controlled, not left to drift in qBittorrent.conf: `apply-tuning.sh` is the source of truth and `deploy.sh qbittorrent` re-asserts it via the WebUI API on every deploy (idempotent; survives a `config/` wipe). Change values in `apply-tuning.sh` and this table together.

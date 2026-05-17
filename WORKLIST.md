@@ -663,3 +663,40 @@ Nextcloud and Pi-hole are explicitly out of scope.
 `deploy.sh caddy` (validates, gate comes off), `docker compose down` in
 /srv/authelia. Apps' own auth only local-disabled, never deleted —
 re-enable per service. `/srv/authelia/data` disposable.
+
+### 6.5 *arr "slow/non-functional" debug — doc drift fix + restart-orphan hardening  [PARTIAL — #1 shipped; #2/#3 designed, not built]
+
+**Trigger:** operator reported Radarr/Sonarr downloads extremely slow
+and/or non-functional while a hand-added qBit torrent worked fine.
+
+**Diagnosis (2026-05-17, no live-service changes made):** Radarr is healthy
+and fast (one grab, *Oddity 2160p*, 28.7 GB in 22 min ≈ 21 MB/s,
+auto-imported). The fault is **not** speed: Sonarr's only grab (*Planet
+Earth III S01E01*, sent to qBit 20:00) was orphaned when the seedbox commit
+`9c25f5c` deployed at ~20:36 recreated the gluetun+qBit stack; the
+no-metadata private-tracker torrent had no resume data, didn't survive, and
+Sonarr silently reverted it to "missing" (no queue/blocklist/retry).
+Indexers, VPN, forwarded port, disk all verified healthy; the earlier
+"0 active indexers" was the (resolved) Prowlarr tag-sync gotcha.
+
+**Success criteria:**
+- Radarr/Sonarr READMEs no longer claim "stub — not yet deployed"; document
+  the real wiring (categories, qBit global save path
+  `/mnt/media/_unsorted/torrents`, exfat/no-hardlink copy-on-import, the
+  ghost `tv-sonarr` category, the restart-orphan gotcha).
+- Compose-file header comments corrected (no SD-card / 2 GB-Pi /
+  `/mnt/media/downloads/complete/` drift).
+- `deploy.sh qbittorrent` warns the operator to re-run Wanted→Missing after
+  a stack (re)deploy (mitigation #1).
+- `services/qbittorrent/README.md` carries the design for mitigations
+  #2 (skip recreate on tuning-only change) and #3 (post-deploy *arr search
+  hook) as the planned path.
+
+**Outcome:** Repo-only change, committed. Live services untouched (operator
+explicitly scoped to repo fixes). Mitigation #1 shipped; #2/#3 documented,
+deferred. The operator still needs to: re-search the lost Planet Earth III
+episodes (or Manual Import the hand-grabbed season pack already in
+`/mnt/media/video/tv`), and delete the ghost `tv-sonarr` qBit category.
+
+**Rollback:** `git revert` — documentation + one benign `warn` in
+`deploy.sh`; no service config or state changed.

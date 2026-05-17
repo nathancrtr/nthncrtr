@@ -10,15 +10,16 @@
 #   #   Settings → Download Clients → Add qBittorrent (category: movies)
 #   #   Settings → General → Security → copy the API key to secrets.env
 #
-# IMPORTANT — keep downloads on /mnt/media, not the SD card:
-#   In qBittorrent, set the default save path to /mnt/media/downloads/complete/
-#   (or a category-scoped path under that). Radarr can then see the completed
-#   files at /mnt/media/downloads/complete/ inside the container and move them
-#   to /mnt/media/video/movies/ — all on the same (exfat) filesystem.
+# Downloads: qBit's global save path is /mnt/media/_unsorted/torrents (NOT
+#   the old /mnt/media/downloads/complete/ — that path does not exist). The
+#   `movies` category has an empty save path and qBit auto-TMM is off, so
+#   grabs land flat there; Radarr imports them into /mnt/media/video/movies/.
+#   /mnt/media is exfat — no hardlinks — so "keep seeding" copies the file
+#   into the library (stored twice until seeding stops). See README.md.
 #
-# Pi 4 B note: Radarr's .NET runtime idles at ~150–250 MB but spikes during
-# initial library scans. mem_limit: 512m caps runaway growth so that one
-# greedy process cannot OOM-kill the other services on this 2 GB host.
+# mem_limit: 512m is a deliberate bound on a SHARED hub (~7 GiB Beelink, not
+#   the old 2 GB Pi / SD card). Radarr idles ~150–250 MB and is not OOM-killed
+#   in practice; the cap protects the other co-resident services. See README.
 #
 # Ports:
 #   7878 — WebUI (matches Caddyfile)

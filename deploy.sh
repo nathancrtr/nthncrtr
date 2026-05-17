@@ -227,6 +227,14 @@ deploy_qbittorrent() {
   else
     warn "apply-tuning.sh failed — qBit prefs may be unmanaged (check localhost-bypass)"
   fi
+  # A compose change to gluetun OR qbittorrent recreates the whole VPN+qBit
+  # stack (shared netns). An *arr grab issued just before this — not yet
+  # past metadata on a private tracker (no DHT/PEX) — has no resume data,
+  # does not survive the recreate, and Sonarr/Radarr silently drop it back
+  # to "missing" (no queue item, no retry). They have no auto-recovery.
+  # See services/qbittorrent/README.md § "*arr grabs vs stack restarts".
+  warn "qBit stack (re)deployed — in-flight *arr grabs may have been orphaned."
+  warn "  Re-run Wanted→Missing search in Sonarr/Radarr to recover them."
 }
 
 deploy_radarr() {

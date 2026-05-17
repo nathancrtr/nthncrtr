@@ -81,15 +81,20 @@ starmaya.nthncrtr.com {
 # per-user accounts; operator decision, WORKLIST 6.6). The scoping mechanism
 # lives in this address line, so read carefully before touching it:
 #
-#  - ":8443" is the ONLY port the home router port-forwards (WAN 443 →
-#    natto:8443). Every other vhost above is :443-implicit and therefore
-#    stays tailnet-only exactly as before — do NOT add :8443 to any of them
-#    or you silently put it on the public internet.
-#  - ":443" is also listed so *inside* clients reach Jellyfin by the same
-#    hostname+TLS (Pi-hole split-horizon points play.nthncrtr.com at
-#    natto's LAN IP to dodge NAT hairpin). An explicit host:443 site is more
-#    specific than the `:443 { abort }` catch-all below, so only THIS host
-#    is served on 443 — the catch-all still swallows every other name.
+#  - ":8443" is the ONLY port the home router port-forwards: WAN 8443 →
+#    natto:8443 (NOT WAN 443 — GFiber reserves inbound 443 for its own
+#    management UI, answers it with a self-signed cert and never forwards
+#    it; external clients then get a cert error / 408 and nothing reaches
+#    Caddy. Lesson logged in services/jellyfin/README.md). Every other
+#    vhost above is :443-implicit and therefore stays tailnet-only exactly
+#    as before — do NOT add :8443 to any of them or you silently put it on
+#    the public internet, and do NOT change the forward to 443.
+#  - ":443" is also listed so an inside client typing the bare name still
+#    works (Pi-hole split-horizon points play.nthncrtr.com at natto's LAN
+#    IP). But the advertised PublishedServerUrl is :8443 everywhere, so
+#    inside and outside use one identical URL. An explicit host:443 site is
+#    more specific than the `:443 { abort }` catch-all below, so only THIS
+#    host is served on 443 — the catch-all still swallows every other name.
 #  - NO `import authelia`: forward_auth breaks Jellyfin's native TV/phone
 #    clients (operator decision, WORKLIST 6.4/6.6). Jellyfin's own per-user
 #    accounts + the fail2ban jail (services/fail2ban) are the only barrier.

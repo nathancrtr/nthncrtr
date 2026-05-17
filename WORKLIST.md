@@ -733,7 +733,8 @@ exactly Jellyfin with zero retrofit to the other services.
   play.nthncrtr.com:8443 → 127.0.0.1:8096`, no `import authelia`;
   `caddy adapt` passes.
 - `services/jellyfin/docker-compose.yml`: `PublishedServerUrl =
-  https://play.nthncrtr.com`; header rewritten.
+  https://play.nthncrtr.com:8443` (port mandatory — GFiber reserves WAN
+  443; see operator step 5); header rewritten.
 - `services/ddns/` scaffolded (favonia/cloudflare-ddns; compose +
   secrets.env.example + .gitignore + README), wired into `deploy.sh`
   (default set) + `bootstrap/natto.sh`.
@@ -766,15 +767,22 @@ exactly Jellyfin with zero retrofit to the other services.
    (`DELETE_ON_STOP=false`, name no longer in `DOMAINS`), leaving a stray
    public name → home WAN IP. Removing it is the whole point of the
    obscure name.
-5. Router: port-forward WAN `tcp/443` → `<natto LAN IP>:8443` (NOT :443).
+5. Router (GFiber): port-forward WAN `tcp/8443` → `192.168.1.240:8443`.
+   **NOT 443** — GFiber reserves inbound WAN 443 for its own management UI
+   (answers with a self-signed cert, never forwards it; symptom = external
+   408 / cert error, nothing in `journalctl -u caddy`). External port must
+   be non-443; 8443 chosen to match natto's listener. Public URL is
+   therefore `https://play.nthncrtr.com:8443`.
 6. Jellyfin UI: **Known proxies = `127.0.0.1`** (required for fail2ban),
    disable UPnP port-mapping, create the friend's non-admin per-user
    account, strong passwords on all accounts.
-7. Verify: inside `https://play.nthncrtr.com` (valid cert, login);
-   outside (cellular) friend streams a title; **QSV engages for a remote
-   4k transcode** (services/jellyfin/README.md); **negative test** —
-   `pi-hole.nthncrtr.com` / `natto.nthncrtr.com` must FAIL from outside;
-   `df -h /`.
+7. Verify: inside `https://play.nthncrtr.com:8443` (valid LE cert, login);
+   outside (cellular, WiFi off) friend streams a title; **QSV engages for
+   a remote 4k transcode** (services/jellyfin/README.md); **negative
+   test** — `pi-hole.nthncrtr.com` / `natto.nthncrtr.com` must FAIL from
+   outside; `df -h /`. Set Dashboard → Playback → "Internet streaming
+   bitrate limit" ~10–15 Mbps before sharing (protects home uplink; a
+   client otherwise requests ~26 Mbps).
 
 **Follow-up (tracked, not in scope):** add `mholt/caddy-ratelimit` to
 `services/caddy/build.sh` for edge throttling of the Jellyfin auth endpoint

@@ -19,7 +19,7 @@ Caddyfile or the router.
 | Container | `jellyfin` |
 | Image | `lscr.io/linuxserver/jellyfin:latest` |
 | Networking | `network_mode: host` — binds `8096` (+ `8920`, `1900/udp`, `7359/udp`) directly on natto. Not bridge/published; see compose header (DNS-rebinding guard / stable `127.0.0.1` proxy) |
-| Reachability | **Public** at `https://play.nthncrtr.com` (one URL, inside + out); raw `http://natto:8096` / tailnet still work |
+| Reachability | **Public** at `https://play.nthncrtr.com:8443` (one URL, inside + out — the `:8443` is mandatory, GFiber reserves WAN 443; see below); raw `http://natto:8096` / tailnet still work |
 
 ### How "public, but only Jellyfin" actually works
 
@@ -32,20 +32,35 @@ and you must reason about the other two:
    dedicated listener; every other vhost is `:443` only. **No
    `import authelia`** — forward_auth breaks Jellyfin's native TV/phone
    clients (WORKLIST 6.4/6.6).
-2. **Router** (operator-managed, not in repo): port-forwards WAN `tcp/443`
-   → `natto-LAN-IP:8443`. Because only `:8443` is forwarded and only the
-   Jellyfin block listens there, **only Jellyfin is exposed**. Forwarding
-   `:443` instead would put Navidrome / Pi-hole / the *arrs / roaster on
-   the internet — do not.
-3. **DNS, split-horizon**:
+2. **Router** (operator-managed, not in repo): port-forwards WAN
+   `tcp/8443` → `192.168.1.240:8443`. **Not 443.** The GFiber router
+   *reserves inbound WAN 443 for its own management UI* — it answers `:443`
+   with a self-signed cert and never forwards it (symptom: external clients
+   get a cert error or HTTP 408, and *nothing* reaches Caddy). So the
+   external entrypoint is `:8443`, matched to natto's `:8443`. Because only
+   `:8443` is forwarded and only the Jellyfin block listens there, **only
+   Jellyfin is exposed**. Forwarding `:443` would (a) not work at all on
+   GFiber and (b) if it did, expose every other vhost — do not.
+3. **DNS, split-horizon** (one `PublishedServerUrl` =
+   `https://play.nthncrtr.com:8443` works both ways):
    - *Outside* — Cloudflare A record `play` → home WAN IP (grey-cloud,
-     proxy off), kept current by `services/ddns`.
-   - *Inside* — Pi-hole local DNS `play.nthncrtr.com` → natto LAN IP,
-     so inside clients hit the `:443` listener directly and don't depend
-     on router NAT hairpin. One `PublishedServerUrl` works both ways.
+     proxy off), kept current by `services/ddns`. Client uses `:8443`;
+     GFiber forwards WAN 8443 → natto 8443.
+   - *Inside* — Pi-hole local DNS `play.nthncrtr.com` → natto LAN IP;
+     client uses the same `:8443`, hitting Caddy's `:8443` listener
+     directly (no NAT hairpin). Caddy still also listens `:443` for that
+     host as a courtesy for anyone typing the bare name on the LAN, but
+     the advertised/working URL everywhere is `:8443`.
 
-Cert issuance is unaffected: the global DNS-01 challenge doesn't need the
-host reachable on 443, so the non-standard `:8443` is a non-issue.
+Cert issuance is unaffected: the DNS-01 challenge doesn't need the host
+reachable on any port, so Caddy holds a valid Let's Encrypt cert for
+`play.nthncrtr.com` regardless of the non-standard `:8443`.
+
+> **GFiber lesson (cost a debugging round):** a `self signed certificate`
+> from an external client + zero connections in `journalctl -u caddy` +
+> a browser 408 == the GFiber box is answering WAN 443 itself, not
+> forwarding it. The fix is *any* non-443 external port → natto:8443; it
+> is not a Caddy/Jellyfin/cert fault (Caddy's cert is valid LE).
 
 #### Split-horizon: local DNS records on this Pi-hole (v6)
 

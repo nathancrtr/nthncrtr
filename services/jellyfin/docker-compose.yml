@@ -3,19 +3,23 @@
 #
 # Reachability: the ONE deliberately internet-exposed service (trusted users,
 # per-user accounts — operator decision, WORKLIST 6.6). Reached at:
-#   https://play.nthncrtr.com           (public AND inside, single URL)
+#   https://play.nthncrtr.com:8443          (public AND inside, single URL)
 #   http://natto:8096                       (LAN, raw — still works)
 #   http://natto.tailaf7ea6.ts.net:8096     (tailnet, raw — still works)
-# Public path: home-router WAN 443 → natto:8443 → the Caddy
-# `play.nthncrtr.com:8443` block (services/caddy/Caddyfile) → here. NO
-# Authelia on this route (forward_auth breaks native TV/phone clients —
-# WORKLIST 6.4/6.6); Jellyfin's own accounts + the fail2ban jail
-# (services/fail2ban) are the only barrier. Caddy is :8443-scoped so ONLY
-# Jellyfin is public; every other vhost stays tailnet-only. Inside clients
-# resolve the same hostname via Pi-hole split-horizon (→ natto LAN IP, the
-# :443 listener) to avoid NAT hairpin. 8096 is Jellyfin's default HTTP port,
-# free on natto (8080 = gluetun, 8081 = nextcloud, 8053 = pihole admin,
-# 8443 = the Jellyfin public listener in Caddy).
+# Why the :8443 in the URL — this is a hard-won lesson, do not "simplify"
+# it back to :443: the GFiber router RESERVES inbound WAN 443 for its own
+# management UI (it answers :443 with a self-signed cert and never forwards
+# it), so the public entrypoint is WAN 8443 → natto:8443. Caddy already
+# serves play.nthncrtr.com on :8443 with a valid Let's Encrypt cert.
+# PublishedServerUrl must therefore carry :8443 so the SAME value works
+# inside (Pi-hole split-horizon → natto LAN IP, Caddy :8443) and outside
+# (GFiber forward WAN 8443 → natto :8443). NO Authelia on this route
+# (forward_auth breaks native TV/phone clients — WORKLIST 6.4/6.6);
+# Jellyfin's own accounts + the fail2ban jail (services/fail2ban) are the
+# only barrier. Caddy is :8443-scoped so ONLY Jellyfin is public; every
+# other vhost stays tailnet-only on :443. 8096 is Jellyfin's default HTTP
+# port, free on natto (8080 = gluetun, 8081 = nextcloud, 8053 = pihole
+# admin, 8443 = the Jellyfin public listener in Caddy).
 #
 # Data layout on natto (config/cache on the Beelink's internal ext4 — the
 # media itself stays on the exfat 5TB, mounted read-only):
@@ -63,11 +67,13 @@ services:
       - PUID=1000
       - PGID=1000
       - TZ=America/New_York
-      # Absolute base URL handed to clients. One value works inside AND out
-      # because Pi-hole split-horizon resolves this hostname to natto's LAN
-      # IP for inside clients and Cloudflare resolves it to the home WAN IP
-      # for outside clients — both terminate at the same Caddy jellyfin block.
-      - JELLYFIN_PublishedServerUrl=https://play.nthncrtr.com
+      # Absolute base URL handed to clients. One value works inside AND out:
+      # inside, Pi-hole split-horizon resolves the name to natto's LAN IP;
+      # outside, Cloudflare resolves it to the home WAN IP — both reach
+      # Caddy's play.nthncrtr.com:8443 listener. The :8443 is MANDATORY in
+      # this value (GFiber reserves WAN 443; see the header). Dropping the
+      # port breaks external clients.
+      - JELLYFIN_PublishedServerUrl=https://play.nthncrtr.com:8443
     volumes:
       - ./config:/config
       - ./cache:/cache

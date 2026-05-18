@@ -12,7 +12,9 @@
         widget:
           type: pihole
           url: http://host.docker.internal:8053
-          key: '{{HOMEPAGE_VAR_PIHOLE_KEY}}'
+          # Pi-hole runs passwordless (pihole.toml pwhash empty), so the v6
+          # API needs no auth and the widget takes no key. Setting a stale
+          # key here is what produced "API Error: Unexpected error".
           version: 6
 
     - Navidrome:

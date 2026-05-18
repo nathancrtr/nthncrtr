@@ -39,6 +39,15 @@ services:
         required: false
     environment:
       - TZ=America/New_York
+      # gluetun blocks ALL inbound by default. The 127.0.0.1:8080 host publish
+      # works because that path is host→DNAT→conntrack; a *fresh* container-to-
+      # container connect to gluetun:8080 (the Homepage widget on the shared
+      # qbittorrent_default net) is rejected without this. Opens 8080 on
+      # gluetun's docker-net interface only (172.23.0.0/16 — already in qBit's
+      # WebUI\AuthSubnetWhitelist); the tun0 VPN side and the 127.0.0.1-only
+      # host publish (safety rule 9) are unchanged. Standard gluetun+sidecar
+      # pattern — see services/homepage/README.md "two paths".
+      - FIREWALL_INPUT_PORTS=8080
       # Instant push-on-change: the moment Proton assigns a new forwarded
       # port, gluetun runs this in its own netns (so 127.0.0.1:8080 is qBit,
       # localhost auth-bypass applies). Eliminates the up-to-60s dead-inbound

@@ -647,7 +647,7 @@ rather than reading as a transient migration casualty.
 
 **Rollback:** `git revert` — docs only, no running service affected.
 
-### 6.4 SSO for the web-admin tier (Authelia + Caddy forward_auth)  [NEW — scaffolding committed; activation pending operator]
+### 6.4 SSO for the web-admin tier (Authelia + Caddy forward_auth)  [DONE — activated + double-login removed 2026-05-18]
 
 Collapse the per-app password-manager entries for the *arrs, qBittorrent
 and Homepage to one Authelia login. Scope (operator decision): web-admin
@@ -678,6 +678,23 @@ Nextcloud and Pi-hole are explicitly out of scope.
 `deploy.sh caddy` (validates, gate comes off), `docker compose down` in
 /srv/authelia. Apps' own auth only local-disabled, never deleted —
 re-enable per service. `/srv/authelia/data` disposable.
+
+**Outcome (2026-05-18):** Activated, and the second (in-app) login removed.
+The success-criteria sketch above assumed the *arrs would stay on `Forms`
+with `AuthenticationRequired=DisabledForLocalAddresses` — but newer Servarr
+removed the no-login option, so a `Forms` app always shows its own login =
+double prompt. Resolved instead with **`AuthenticationMethod=External`**
+(prowlarr/sonarr/radarr `config.xml`): the app renders no login page and
+trusts the Authelia-fronted proxy; API keys still guard `/api` (Homepage
+widgets + Prowlarr↔*arr sync unaffected). qBittorrent has no `External`
+equivalent — used `WebUI\AuthSubnetWhitelist=172.23.0.0/16` (the docker
+bridge) instead. Because "no app login" + a `0.0.0.0` host publish would be
+an unauthenticated LAN-direct bypass of Authelia, all four WebUI ports were
+rebound to `127.0.0.1` (only path is `*.nthncrtr.com → Caddy → Authelia`).
+Verified: LAN-direct refused, all four hosts 302 → Authelia, API 200,
+settings survived restart. The coupled two-halves model is now CLAUDE.md
+safety rule 9. `External`/whitelist are runtime state on natto (not in
+repo); the `127.0.0.1` bindings are the committed half (`da9cf45`).
 
 ### 6.5 *arr "slow/non-functional" debug — doc drift fix + restart-orphan hardening  [PARTIAL — #1 shipped; #2/#3 designed, not built]
 

@@ -11,8 +11,12 @@
 # One-time bootstrap (not handled here): git clone this repo to
 # /srv/nthncrtr-repo and put a read-only deploy key at /root/.ssh/.
 #
-# Services: caddy navidrome homepage backup qbittorrent radarr sonarr prowlarr nextcloud jellyfin cloudflared authelia pihole starmaya
-# Default (no service args): caddy navidrome homepage backup qbittorrent radarr sonarr prowlarr nextcloud jellyfin cloudflared
+# Services: caddy navidrome backup qbittorrent radarr sonarr prowlarr homepage nextcloud jellyfin cloudflared authelia pihole starmaya
+# Default (no service args): caddy navidrome backup qbittorrent radarr sonarr prowlarr homepage nextcloud jellyfin cloudflared
+#   — homepage is AFTER the *arrs/qBittorrent on purpose: its widgets reach
+#     them over those compose projects' (external) docker networks, which
+#     only exist once those projects have come up. Steady-state re-deploys
+#     are fine in any order (the nets persist with the running containers).
 #   — cloudflared exists only because Jellyfin is public (WORKLIST 6.6):
 #     it's the Cloudflare Tunnel public path (GFiber can't port-forward —
 #     see services/cloudflared/README.md). Default-on; harmless before the
@@ -40,8 +44,8 @@ usage() {
   cat <<'EOF'
 Usage: sudo ./deploy.sh [--dry-run] [--yes-pihole] [services...]
 
-Services: caddy navidrome homepage backup qbittorrent radarr sonarr prowlarr nextcloud jellyfin cloudflared pihole starmaya
-Default (no service args): caddy navidrome homepage backup qbittorrent radarr sonarr prowlarr nextcloud jellyfin cloudflared
+Services: caddy navidrome backup qbittorrent radarr sonarr prowlarr homepage nextcloud jellyfin cloudflared pihole starmaya
+Default (no service args): caddy navidrome backup qbittorrent radarr sonarr prowlarr homepage nextcloud jellyfin cloudflared
 EOF
   exit "${1:-0}"
 }
@@ -59,7 +63,7 @@ done
 
 SERVICES=("$@")
 if [[ ${#SERVICES[@]} -eq 0 ]]; then
-  SERVICES=(caddy navidrome homepage backup qbittorrent radarr sonarr prowlarr nextcloud jellyfin cloudflared)
+  SERVICES=(caddy navidrome backup qbittorrent radarr sonarr prowlarr homepage nextcloud jellyfin cloudflared)
   (( YES_PIHOLE )) && SERVICES+=(pihole)
 fi
 

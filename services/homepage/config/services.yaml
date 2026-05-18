@@ -36,7 +36,11 @@
         container: qbittorrent
         widget:
           type: qbittorrent
-          url: http://host.docker.internal:8080
+          # qBit shares gluetun's netns (network_mode: service:gluetun), so on
+          # the qbittorrent_default net the reachable name is `gluetun`, not
+          # `qbittorrent`. 8080 is qBit's WebUI inside that netns. host.docker
+          # .internal won't work — gluetun publishes 8080 on 127.0.0.1 only.
+          url: http://gluetun:8080
           username: admin
           password: '{{HOMEPAGE_VAR_QBITTORRENT_PASSWORD}}'
 
@@ -47,7 +51,9 @@
         container: radarr
         widget:
           type: radarr
-          url: http://host.docker.internal:7878
+          # Container name on the shared radarr_default net (radarr publishes
+          # 7878 on 127.0.0.1 only — host.docker.internal can't reach it).
+          url: http://radarr:7878
           key: '{{HOMEPAGE_VAR_RADARR_KEY}}'
 
     - Sonarr:
@@ -57,7 +63,9 @@
         container: sonarr
         widget:
           type: sonarr
-          url: http://host.docker.internal:8989
+          # Container name on the shared sonarr_default net (127.0.0.1-only
+          # publish — see the Radarr note above).
+          url: http://sonarr:8989
           key: '{{HOMEPAGE_VAR_SONARR_KEY}}'
 
     - Prowlarr:
@@ -67,7 +75,9 @@
         container: prowlarr
         widget:
           type: prowlarr
-          url: http://host.docker.internal:9696
+          # Container name on the shared prowlarr_default net (127.0.0.1-only
+          # publish — see the Radarr note above).
+          url: http://prowlarr:9696
           key: '{{HOMEPAGE_VAR_PROWLARR_KEY}}'
 
     - Nextcloud:

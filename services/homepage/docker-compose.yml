@@ -5,7 +5,23 @@ services:
     ports:
       - "127.0.0.1:3000:3000"
     extra_hosts:
+      # Still used by the Pi-hole/Navidrome/Nextcloud/Jellyfin widgets, whose
+      # containers publish on 0.0.0.0 and so are reachable on the host gateway.
       - "host.docker.internal:host-gateway"
+    networks:
+      # default = homepage's own net (host-gateway path above still works).
+      # The *arrs and qBittorrent publish ONLY on 127.0.0.1 (safety rule 9 —
+      # the Authelia-only path), so host.docker.internal can't reach them.
+      # Joining their compose default networks lets the widgets address them
+      # by container name on the in-container port, bypassing the host publish
+      # entirely — no LAN exposure, API key / qBit login still apply. These
+      # nets are created by the *arr/qbittorrent compose projects, so deploy.sh
+      # brings homepage up AFTER them (see its SERVICES order).
+      - default
+      - radarr_default
+      - sonarr_default
+      - prowlarr_default
+      - qbittorrent_default
     volumes:
       - ./config:/app/config
       - /var/run/docker.sock:/var/run/docker.sock:ro
@@ -21,3 +37,18 @@ services:
       - path: secrets.env
         required: false
     restart: unless-stopped
+
+networks:
+  # homepage's own network.
+  default:
+  # Created by the radarr/sonarr/prowlarr/qbittorrent compose projects
+  # (project name = /srv/<svc> dir → "<svc>_default"). Marked external so
+  # homepage attaches to them rather than trying to manage them.
+  radarr_default:
+    external: true
+  sonarr_default:
+    external: true
+  prowlarr_default:
+    external: true
+  qbittorrent_default:
+    external: true

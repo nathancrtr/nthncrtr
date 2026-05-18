@@ -39,6 +39,33 @@ The compose uses `env_file: [{ path: secrets.env, required: false }]` so `docker
 4. If the widget needs an API token, add `HOMEPAGE_VAR_<NAME>=` to `secrets.env.example` (committed) AND to the operator's `/srv/homepage/secrets.env` (not).
 5. `cd /srv/homepage && docker compose restart` (or `docker compose up -d` if the env_file changed).
 
+## How widgets reach their backends (two paths)
+
+Not all widgets reach their service the same way, because not all services
+publish their port the same way:
+
+- **Pi-hole, Navidrome, Nextcloud, Jellyfin** publish on `0.0.0.0`, so they're
+  reachable on the docker-bridge gateway. Their widgets use
+  `http://host.docker.internal:<port>` (the `extra_hosts: host-gateway` entry).
+- **Radarr, Sonarr, Prowlarr, qBittorrent** publish on `127.0.0.1` only
+  (safety rule 9 — the Authelia-only path). `host.docker.internal` is the
+  *gateway* IP, not loopback, so it **cannot** reach a loopback-only publish —
+  this is what produced their "API Error" after the Authelia cutover. The fix:
+  the homepage container joins those compose projects' default networks
+  (`radarr_default`, `sonarr_default`, `prowlarr_default`,
+  `qbittorrent_default`, declared `external: true` in the compose) and the
+  widgets address the services **by container name on the in-container port**:
+  `http://radarr:7878`, `http://sonarr:8989`, `http://prowlarr:9696`,
+  `http://gluetun:8080` (qBit shares gluetun's netns, so the reachable name
+  is `gluetun`). This bypasses the host publish entirely — no LAN exposure,
+  the *arr API keys and qBit login still apply, Authelia/the human path is
+  untouched, and the rule-9 compose files are not modified.
+
+Consequence: **homepage must be deployed after the *arrs/qBittorrent** so
+those external networks exist. `deploy.sh`'s default SERVICES order does this.
+Steady-state re-deploys are order-independent (the nets persist with the
+running containers); only a fully cold bootstrap cares.
+
 ## Backup
 
 The whole config dir + secrets.env get included via `/srv/` in the daily tarball.

@@ -44,8 +44,20 @@ User passwords are encrypted at rest via `ND_PASSWORDENCRYPTIONKEY`, set in
 with `openssl rand -hex 32`.
 
 **Without this key set, Navidrome stores passwords in plaintext** — that
-was the state until 2026-05-18 (WORKLIST 7.2). The first Navidrome start
-after the key is set encrypts any existing plaintext passwords in place.
+was the state until 2026-05-18 (WORKLIST 7.2).
+
+**Navidrome does NOT auto-encrypt existing plaintext when you first set a
+key** (learned the hard way — WORKLIST 7.2). Its boot routine is
+*key-rotation only*: it decrypts each stored value with the **previous**
+key and re-encrypts with the new one. Fed a raw-plaintext password it
+logs `cipher: message authentication failed`, leaves the value plaintext,
+and skips the migration. Login still works (there is a plaintext-compare
+fallback) so this is silent — but at rest stays plaintext and the
+user-update API 500s. The "already encrypted with current key" sentinel
+is the `property` row **`PasswordsEncryptedKey`**; its absence is what
+makes Navidrome retry (and re-fail) the migration every boot. The only
+reliable plaintext→encrypted path is the scratch-instance transplant in
+§ Recovery below.
 
 **The key is not recoverable.** If `secrets.env` is lost or the key
 changes, every stored password becomes undecryptable and all users are
@@ -57,21 +69,64 @@ protects against a DB-only leak, not against loss of the whole backup.
 
 ### Forgotten / locked-out password recovery
 
-No reset CLI exists. With the container stopped, write the desired
-password as **plaintext** into the DB; the next start re-encrypts it with
-the configured key (or stores it plaintext if no key is set):
+No reset CLI exists. Method depends on whether a key is configured:
+
+**No key configured (plaintext mode):** stop the container, write the
+desired password as plaintext, start. Login's plaintext-compare accepts
+it.
 
 ```sh
 cd /srv/navidrome && docker compose stop
-cp -a data/navidrome.db "data/../_pwreset_bak_$(date +%s)/" # snapshot first
-# one-off container (no host sqlite3); single-quote-safe passwords only:
+mkdir -p "_pwreset_bak_$(date +%s)" && cp -a data/navidrome.db* "_pwreset_bak_"*/
 docker run --rm -v /srv/navidrome/data:/data --entrypoint sh \
   deluan/navidrome:latest -c \
   "sqlite3 /data/navidrome.db \"UPDATE user SET password='NEWPASS' WHERE user_name='USER';\""
 docker compose up -d
-# verify: curl -s -o /dev/null -w '%{http_code}' -X POST \
-#   http://127.0.0.1:4533/auth/login -H 'Content-Type: application/json' \
-#   -d '{"username":"USER","password":"NEWPASS"}'   # expect 200
+```
+
+**Key configured (this host):** a plaintext write will NOT work (login's
+fallback masks it but the value stays plaintext and user-edit 500s). You
+must mint a value Navidrome can decrypt with the live key. Don't hand-roll
+the AES — let Navidrome encrypt it in a throwaway instance using the *same*
+key, then transplant the ciphertext **and** the `PasswordsEncryptedKey`
+property into the real DB:
+
+```sh
+cd /srv/navidrome && docker compose stop
+mkdir -p "_pwreset_bak_$(date +%s)" && cp -a data/navidrome.db* "_pwreset_bak_"*/
+rm -rf /tmp/nd-scratch && mkdir -p /tmp/nd-scratch/data /tmp/nd-scratch/music
+docker run -d --name nd-scratch -p 127.0.0.1:4599:4533 \
+  --env-file /srv/navidrome/secrets.env -e ND_DATAFOLDER=/data \
+  -e ND_MUSICFOLDER=/music -v /tmp/nd-scratch/data:/data \
+  -v /tmp/nd-scratch/music:/music:ro deluan/navidrome:latest
+# wait for :4599/ping, then create the user with the desired password:
+curl -fsS -X POST http://127.0.0.1:4599/auth/createAdmin \
+  -H 'Content-Type: application/json' \
+  -d '{"username":"USER","password":"NEWPASS"}'
+docker stop nd-scratch
+# transplant scratch's user.password + PasswordsEncryptedKey into the real DB
+# (python3 + stdlib sqlite3; both DBs on the host while real is stopped):
+python3 - <<'PY'
+import sqlite3
+s=sqlite3.connect("/tmp/nd-scratch/data/navidrome.db")
+r=sqlite3.connect("/srv/navidrome/data/navidrome.db")
+pw,=s.execute("SELECT password FROM user").fetchone()
+prop,=s.execute("SELECT value FROM property WHERE id='PasswordsEncryptedKey'").fetchone()
+r.execute("UPDATE user SET password=? WHERE user_name=?",(pw,"USER"))
+r.execute("INSERT OR REPLACE INTO property(id,value) VALUES('PasswordsEncryptedKey',?)",(prop,))
+r.commit()
+PY
+docker compose up -d
+docker rm nd-scratch
+docker run --rm -v /tmp:/t --entrypoint sh deluan/navidrome:latest -c 'rm -rf /t/nd-scratch'
+```
+
+Verify either way:
+
+```sh
+curl -s -o /dev/null -w '%{http_code}\n' -X POST \
+  http://127.0.0.1:4533/auth/login -H 'Content-Type: application/json' \
+  -d '{"username":"USER","password":"NEWPASS"}'   # expect 200
 ```
 
 ## Backup

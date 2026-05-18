@@ -889,42 +889,57 @@ split-horizon.
 (adapt-gated); restore the old Pi-hole local record. Navidrome data
 untouched throughout.
 
-### 7.2 Encrypt Navidrome passwords at rest (ND_PASSWORDENCRYPTIONKEY)  [repo done — secret install + deploy pending operator]
+### 7.2 Encrypt Navidrome passwords at rest (ND_PASSWORDENCRYPTIONKEY)  [DONE — encrypted at rest + live-verified 2026-05-18]
 
 Surfaced while recovering a locked-out login (the `natto.→music.` rename
 broke password-manager autofill; the stored credential was correct all
 along — rename/deploy exonerated). Recovery revealed Navidrome had **no
 encryption key**, so passwords sat in **plaintext** in `navidrome.db` —
-and thus in every nightly `/srv` backup tarball. Operator chose to enable
-encryption now, while the recovered password is still plaintext (the first
-keyed start encrypts existing plaintext in place — ideal timing).
+and thus in every nightly `/srv` backup tarball.
 
-**Repo changes (done):** compose `env_file` block (mirrors homepage
-pattern, `required: false`); `secrets.env.example`; `.gitignore`;
-README § Password encryption + a documented forgotten-password recovery
-procedure (the plaintext-write + restart method used in 7.1's incident).
+**Key thing learned (assumption was WRONG):** setting
+`ND_PASSWORDENCRYPTIONKEY` does **not** auto-encrypt pre-existing
+plaintext. Navidrome's boot routine is *key-rotation only* — it decrypts
+each stored value with the **previous** key and re-encrypts with the new
+one. Fed raw plaintext it logs `cipher: message authentication failed`,
+skips the migration, leaves the value plaintext, and (silently) login
+still works via a plaintext-compare fallback while the user-update API
+500s. The "already encrypted with current key" sentinel is the `property`
+row **`PasswordsEncryptedKey`**; its absence makes Navidrome re-fail the
+migration every boot.
 
-**Operator / deploy steps (sequencing matters):**
-1. `/srv/navidrome/secrets.env` (0600, owned `nthncrtr`) with
-   `ND_PASSWORDENCRYPTIONKEY=$(openssl rand -hex 32)` — must exist
-   *before* the deploy's `compose up`, else Navidrome starts keyless and
-   stays plaintext. (Plain ssh suffices; `/srv/navidrome` is
-   `nthncrtr`-owned — no sudo-clipboard dance needed for the secret.)
-2. `cd /srv/nthncrtr-repo && git pull && sudo ./deploy.sh navidrome`
-   (recreates the container with `env_file`; first keyed start encrypts
-   the plaintext password in place).
+**What actually worked (the real method, now in README § Recovery):**
+spin a throwaway Navidrome on a scratch DB with the *same*
+`--env-file secrets.env`, `POST /auth/createAdmin` the user+password there
+(Navidrome stores it correctly key-encrypted and writes
+`PasswordsEncryptedKey`), stop it, then with the real container stopped
+transplant scratch's `user.password` **and** the `PasswordsEncryptedKey`
+property into the real DB via host `python3` stdlib `sqlite3`. Real
+Navidrome then sees a healthy keyed DB, skips migration, decrypts fine.
+No hand-rolled crypto — Navidrome's own code produced the ciphertext.
 
-**Success criteria:** `POST 127.0.0.1:4533/auth/login` still 200 with the
-7.1 password; stored `user.password` is now an encrypted blob, no longer
-the 24-char plaintext.
+**Repo changes:** compose `env_file` block (mirrors homepage pattern,
+`required: false`); `secrets.env.example`; `.gitignore`; README
+§ Password encryption rewritten to the correct (key-rotation-only) model
++ a two-case recovery procedure (plaintext-write for keyless; scratch
+transplant for keyed). Initial commit `6531017` carried the wrong
+"auto-encrypts in place" claim; corrected same session.
+
+**Outcome (verified 2026-05-18):** secret installed
+`/srv/navidrome/secrets.env` (0600, `nthncrtr`, 64-hex); deployed;
+auto-migration failed as above; scratch-transplant applied. `user.password`
+now a 72-char key-encrypted blob (was 24-char plaintext `eittrza9e…`);
+`PasswordsEncryptedKey` present; **no encrypt/decrypt errors** in fresh
+logs; login 200 both locally and end-to-end via
+`https://music.nthncrtr.com`; scratch instance + dir fully removed.
 
 **Caveat (documented, accepted):** encrypted DB + key live in the *same*
-nightly tarball — this defends against a DB-only leak, not loss of the
-whole backup. Losing the key locks out all users (recovery = README
-§ Password encryption procedure).
+nightly tarball — defends against a DB-only leak, not loss of the whole
+backup. Losing the key locks out all users (recovery = README § Recovery,
+keyed case).
 
 **Rollback:** remove `ND_PASSWORDENCRYPTIONKEY` from `secrets.env` +
-redeploy → Navidrome can no longer decrypt → run the README recovery
-(plaintext-write + restart) to get back in. The 7.1 DB snapshot
-(`/srv/navidrome/_pwreset_bak_20260518-002552`) predates encryption and
-is a clean fallback.
+redeploy; Navidrome can't decrypt → run README § Recovery. Pre-encryption
+DB snapshots `/srv/navidrome/_pwreset_bak_2026051800{2552,3613}` are clean
+fallbacks (they predate encryption; they also contain old credentials —
+prune once satisfied).

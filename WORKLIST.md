@@ -888,3 +888,43 @@ split-horizon.
 **Rollback:** revert this commit + `deploy.sh caddy navidrome`
 (adapt-gated); restore the old Pi-hole local record. Navidrome data
 untouched throughout.
+
+### 7.2 Encrypt Navidrome passwords at rest (ND_PASSWORDENCRYPTIONKEY)  [repo done — secret install + deploy pending operator]
+
+Surfaced while recovering a locked-out login (the `natto.→music.` rename
+broke password-manager autofill; the stored credential was correct all
+along — rename/deploy exonerated). Recovery revealed Navidrome had **no
+encryption key**, so passwords sat in **plaintext** in `navidrome.db` —
+and thus in every nightly `/srv` backup tarball. Operator chose to enable
+encryption now, while the recovered password is still plaintext (the first
+keyed start encrypts existing plaintext in place — ideal timing).
+
+**Repo changes (done):** compose `env_file` block (mirrors homepage
+pattern, `required: false`); `secrets.env.example`; `.gitignore`;
+README § Password encryption + a documented forgotten-password recovery
+procedure (the plaintext-write + restart method used in 7.1's incident).
+
+**Operator / deploy steps (sequencing matters):**
+1. `/srv/navidrome/secrets.env` (0600, owned `nthncrtr`) with
+   `ND_PASSWORDENCRYPTIONKEY=$(openssl rand -hex 32)` — must exist
+   *before* the deploy's `compose up`, else Navidrome starts keyless and
+   stays plaintext. (Plain ssh suffices; `/srv/navidrome` is
+   `nthncrtr`-owned — no sudo-clipboard dance needed for the secret.)
+2. `cd /srv/nthncrtr-repo && git pull && sudo ./deploy.sh navidrome`
+   (recreates the container with `env_file`; first keyed start encrypts
+   the plaintext password in place).
+
+**Success criteria:** `POST 127.0.0.1:4533/auth/login` still 200 with the
+7.1 password; stored `user.password` is now an encrypted blob, no longer
+the 24-char plaintext.
+
+**Caveat (documented, accepted):** encrypted DB + key live in the *same*
+nightly tarball — this defends against a DB-only leak, not loss of the
+whole backup. Losing the key locks out all users (recovery = README
+§ Password encryption procedure).
+
+**Rollback:** remove `ND_PASSWORDENCRYPTIONKEY` from `secrets.env` +
+redeploy → Navidrome can no longer decrypt → run the README recovery
+(plaintext-write + restart) to get back in. The 7.1 DB snapshot
+(`/srv/navidrome/_pwreset_bak_20260518-002552`) predates encryption and
+is a clean fallback.

@@ -11,6 +11,15 @@ services:
       ND_SESSIONTIMEOUT: "24h"
       ND_BASEURL: ""
       ND_AUTOIMPORTPLAYLISTS: false
+    env_file:
+      # secrets.env is NOT in the repo — see services/navidrome/secrets.env.example
+      # for the variable list. On natto: /srv/navidrome/secrets.env, mode 0600.
+      # Holds ND_PASSWORDENCRYPTIONKEY (passwords encrypted at rest). Marked
+      # optional so `docker compose config` works on workhorse where the file
+      # is intentionally absent. LOSING THIS KEY LOCKS OUT EVERY USER — see
+      # services/navidrome/README.md § Password encryption.
+      - path: secrets.env
+        required: false
     volumes:
       - "./data:/data"
       - "/mnt/media/music:/music:ro"

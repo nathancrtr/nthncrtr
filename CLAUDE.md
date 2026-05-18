@@ -32,6 +32,9 @@ External access flow: `*.nthncrtr.com` → Cloudflare DNS (DNS-01 challenge toke
     ├── navidrome/               # docker-compose.yml
     ├── homepage/                # docker-compose.yml + config/ + secrets.env.example + .gitignore
     ├── qbittorrent/             # qBit + Gluetun (Proton VPN) sidecar
+    ├── sonarr/                  # docker-compose.yml (the *arrs are repo-managed via deploy.sh)
+    ├── radarr/                  # docker-compose.yml
+    ├── prowlarr/                # docker-compose.yml
     ├── nextcloud/               # NC + MariaDB + Redis + cron (Tailscale-only) + secrets.env.example
     ├── jellyfin/                # docker-compose.yml (host-net; /dev/dri HW transcode; public via cloudflared)
     ├── cloudflared/             # Cloudflare Tunnel — the public path for Jellyfin (config.yml + gitignored creds)
@@ -61,6 +64,8 @@ These exist because skipping them once would be expensive. Each has a reason:
 6. **Never add `Co-Authored-By: Claude` trailers to commit messages.** Operator preference, applies forever. ([memory](../../.claude/projects/-Users-nathancarter-repos-nthncrtr/memory/feedback_commit_attribution.md))
 7. **Always commit before and after a session.** A clean `git status` at session end means a future session can pick up cleanly.
 8. **Jellyfin is the only internet-exposed service; keep it that way.** The public path is the Cloudflare Tunnel (`services/cloudflared`), whose ingress maps exactly `play.nthncrtr.com → Jellyfin` and nothing else — never add other hostnames/services to that tunnel config. GFiber router port-forwarding and DMZ are proven dead ends (don't retry; full reasoning in `services/jellyfin/README.md`). Never put Jellyfin behind `import authelia` (breaks its native clients). The barrier is Jellyfin's per-user accounts + a Cloudflare WAF Rate-Limiting rule on the login path (dashboard state, not in repo — fail2ban was tried and retired: Cloudflare deprecated the zone IP-Access-Rules API its action used). Don't weaken either without saying so explicitly. See WORKLIST 6.6.
+
+9. **The *arrs and qBittorrent auth model is two coupled halves — never change one without the other.** Each *arr's `config.xml` carries `<AuthenticationMethod>External</AuthenticationMethod>` (set 2026-05-18; runtime state on natto, *not* in the repo): the app renders no login page and trusts the Authelia-fronted proxy, while its API key still guards `/api`. qBittorrent has no `External` equivalent, so it instead whitelists the docker bridge in `qBittorrent.conf` (`WebUI\AuthSubnetWhitelist`, also runtime state). Because `External`/whitelist mean "no app-level login," the compose port publishes are deliberately bound to `127.0.0.1` (not `0.0.0.0`) so the *only* path is `*.nthncrtr.com → Caddy → Authelia` — a `0.0.0.0` publish would be an unauthenticated LAN-direct open door. Don't "fix" a port back to `0.0.0.0`, and don't revert `External`/whitelist, without restoring the matching half. Reverting both (back to in-app `Forms` login + `0.0.0.0`) is the clean way to unwind Authelia if ever wanted.
 
 ## Workflow patterns (the things that took a while to figure out)
 

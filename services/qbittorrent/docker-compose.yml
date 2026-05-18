@@ -7,8 +7,15 @@
 # qBit's Network Interface to tun0 in the WebUI is defense-in-depth.
 #
 # WebUI port 8080 is published on gluetun (not qbittorrent — it can't publish
-# ports when sharing another container's netns). Caddy still routes
-# torrent.nthncrtr.com → natto:8080.
+# ports when sharing another container's netns), bound to 127.0.0.1 only so
+# the sole path is torrent.nthncrtr.com → Caddy (native on natto, localhost)
+# → Authelia. qBit has no "External/trust-proxy" mode like the *arrs, so to
+# kill the second login it whitelists the docker bridge in WebUI auth
+# (WebUI\AuthSubnetWhitelist, runtime state in qBittorrent.conf — not in
+# repo); binding 8080 to localhost is what keeps that whitelist from being a
+# LAN-direct bypass. The in-netns 127.0.0.1:8080 path (gluetun port-forward
+# command + qbit-port-updater) is unaffected — that's localhost, not this
+# publish.
 #
 # The torrent peer port is the *forwarded* port that Proton assigns
 # dynamically. The qbit-port-updater sidecar watches gluetun's
@@ -23,7 +30,7 @@ services:
     devices:
       - /dev/net/tun:/dev/net/tun
     ports:
-      - "8080:8080"
+      - "127.0.0.1:8080:8080"
     volumes:
       # Shared with qbit-port-updater so it can read forwarded_port.
       - ./gluetun-state:/tmp/gluetun

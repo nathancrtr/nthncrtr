@@ -37,6 +37,11 @@ services:
     extra_hosts:
       - "host.docker.internal:host-gateway"
     ports:
-      - "7878:7878"
+      # 127.0.0.1 only: the sole intended path is radarr.nthncrtr.com →
+      # Caddy (native on natto, so localhost) → Authelia. config.xml has
+      # AuthenticationMethod=External (runtime state, not in repo) so Radarr
+      # renders no login page and trusts the proxy — a 0.0.0.0 publish would
+      # be an unauthenticated LAN open door. API key still guards /api.
+      - "127.0.0.1:7878:7878"
     restart: unless-stopped
     mem_limit: 512m

@@ -424,7 +424,10 @@ manually. The runbook documents the manual steps in the meantime.
 Goal: a one-time migration *off* Google Drive onto self-hosted Nextcloud,
 Tailscale-only. Decided with the operator: model = one-time data liberation
 (not ongoing sync); reach = Tailscale-only; storage = Beelink internal ext4
-(Drive is < 50 GB); sequencing = repo scaffolding now, activates at the
+(Drive sized at 72.4 GiB when actually pulled 2026-05-18 — the original
+"< 50 GB" planning estimate proved low; the 238 G SSD absorbed it with
+~131 G free, see 6.1 Outcome); sequencing = repo scaffolding now, activates
+at the
 Pi → Beelink cutover (nothing deploys to the current Pi).
 
 ### 5.1 Storage decision + Nextcloud service scaffolding  [DONE — scaffolding; activation pending Beelink cutover]
@@ -437,7 +440,9 @@ Pi → Beelink cutover (nothing deploys to the current Pi).
 - Storage resolved: Nextcloud data + DB on the Beelink's internal ext4 at
   `/srv/nextcloud/{html,data,db}` — *not* the exfat 5TB (exfat can't give the
   DB/data POSIX semantics, and the 5TB must stay exfat for the migration
-  design + safety rule #3). < 50 GB Drive fits internal with headroom.
+  design + safety rule #3). Drive turned out to be 72.4 GiB (not the
+  "< 50 GB" planning estimate); still fit the 238 G SSD with ~131 G free
+  after the 2026-05-18 pull — see 6.1 Outcome.
 - `services/nextcloud/` committed: `docker-compose.yml` (nextcloud:stable
   apache + mariadb:lts + redis:alpine + cron sidecar), `README.md`,
   `secrets.env.example`, `.gitignore` (excludes `secrets.env`). Tailscale-only
@@ -491,7 +496,8 @@ behavior (tar all of `/srv`) is restored by the revert.
 - `runbooks/migrate-off-gdrive.md` committed: rclone remote setup (with the
   own-client-id rate-limit warning), the Google-native export-format decision
   (MS Office recommended; ODF / PDF alternatives spelled out), dry-run sizing
-  gate against the < 50 GB assumption, copy → chown → `occ files:scan`,
+  gate (stop-and-confirm if materially over the planning estimate — this
+  fired on the real pull at 72.4 GiB), copy → chown → `occ files:scan`,
   verification checklist, and an explicit "deleting from Google is manual and
   out of scope" boundary.
 - `runbooks/migrate-natto.md` threaded: Nextcloud secrets in Prerequisites;
@@ -573,8 +579,17 @@ containers; `secrets.env` provisioned (root:root 0600, generated creds,
 admin `nthncrtr`). `occ status` → `installed: true`, v33.0.3,
 `maintenance: false`, `needsDbUpgrade: false`. `status.php` → 200 on both
 `127.0.0.1:8081` and `http://natto.tailaf7ea6.ts.net:8081`. Caddyfile
-untouched. Google Drive pull (`runbooks/migrate-off-gdrive.md`) remains
-outstanding as a separate operator action.
+untouched. Google Drive pull (`runbooks/migrate-off-gdrive.md`) **executed
+2026-05-18**: own OAuth client ID, MS Office export formats. Drive was
+72.4 GiB / 6,292 objects — materially over the < 50 GB planning estimate, so
+the runbook's sizing gate fired and the operator confirmed proceed (238 G SSD,
+204 G free → ~131 G free after). `rclone copy` transferred 6,269 files with
+zero errors (dry-run count matched exactly); chowned to `www-data`;
+`occ files:scan` indexed 6,259 files / 322 folders, 0 errors (10-file delta =
+`.DS_Store`/junk Nextcloud excludes by design); a follow-up `occ files:scan
+--all` also reported 0 errors. Lands at `nthncrtr/files/GoogleDrive`.
+Remaining (operator-only, deliberately out of scope for automation): the
+human spot-check of a migrated Doc/Sheet and the manual deletion from Google.
 
 **Rollback:** `cd /srv/nextcloud && docker compose down` — independent of
 every other service, zero DNS/Caddy impact.

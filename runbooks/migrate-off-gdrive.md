@@ -58,10 +58,14 @@ rclone copy --dry-run --drive-export-formats docx,xlsx,pptx,svg \
   gdrive: /srv/nextcloud/data/<user>/files/GoogleDrive 2>&1 | tail -20
 ```
 
-Sanity-check the reported total against the < 50 GB assumption behind the
-internal-disk sizing decision (WORKLIST 5.1). If it's materially larger,
-**stop** and revisit storage before copying — the Beelink's internal disk is
-the constraint.
+Sanity-check the reported total against free space on the Beelink's internal
+disk (`df -h /`) — that disk is the constraint. The original WORKLIST 5.1
+planning estimate was "< 50 GB"; the real 2026-05-18 pull came in at
+72.4 GiB, so don't treat 50 GB as a hard line — compare against *actual* free
+space. If the total is materially over the planning estimate **stop** and get
+an explicit operator go/no-go before copying (this gate fired for real on the
+72.4 GiB pull; the 238 G SSD had ~204 G free and absorbed it fine — see
+WORKLIST 6.1 Outcome).
 
 ## 4. Copy into the Nextcloud user's files
 

@@ -226,13 +226,42 @@ deploy_qbittorrent() {
     warn "qBittorrent will have no network until Proton VPN credentials are provisioned."
   fi
   compose_up qbittorrent
-  sleep 3
-  verify_url https://torrent.nthncrtr.com 200 || true
+  # qBit writes its container hostname+PID into config/qBittorrent/lockfile
+  # and leaves a config/qBittorrent/ipc-socket. A compose recreate (this
+  # happens on any gluetun/qbit change) gives the new container a fresh
+  # hostname; if the prior qBit didn't remove its lockfile on shutdown
+  # (unclean stop, OOM, host reboot, or being killed inside gluetun's netns),
+  # the new qBit can't verify the recorded PID across a *different* hostname,
+  # assumes another instance is already running, forwards its CLI args over
+  # the stale ipc-socket and exits 0 — a silent ~1s crash-loop where the
+  # WebUI never binds and the log shows only start/terminate (root cause of
+  # the 2026-05-18 multi-hour qBit outage). qBit removes these on a clean
+  # exit, so their presence after the WebUI fails to come up == stale.
+  # Self-heal: gate on real WebUI readiness (also fixes the old blind
+  # `sleep 5` that made apply-tuning race a not-yet-bound qBit), and if it
+  # never binds, clear the stale pair and restart once.
+  qbit_ready() { curl -sf -o /dev/null -m 4 http://127.0.0.1:8080/api/v2/app/version; }
+  for _ in $(seq 1 12); do qbit_ready && break; sleep 3; done
+  if ! qbit_ready; then
+    warn "qBit WebUI did not bind — clearing stale lockfile/ipc-socket, restarting"
+    rm -f /srv/qbittorrent/config/qBittorrent/ipc-socket \
+          /srv/qbittorrent/config/qBittorrent/lockfile
+    docker restart qbittorrent >/dev/null 2>&1 || true
+    for _ in $(seq 1 12); do qbit_ready && break; sleep 3; done
+  fi
+  # Verify the local WebUI (the true qBit-up signal). NOT the public URL:
+  # torrent.nthncrtr.com is Authelia-gated, so `curl -L` there just follows
+  # the 302 to the auth portal and returns 200 even when qBit is dead — a
+  # useless health check post-Authelia-cutover.
+  if qbit_ready; then
+    note "qBit WebUI up (127.0.0.1:8080)"
+  else
+    warn "qBit WebUI STILL down — investigate; see services/qbittorrent/README.md § stale-lock"
+  fi
   # Re-assert seedbox tuning (queueing/rate/scheduler/conn limits). qBit owns
   # qBittorrent.conf, so this API-driven script is the version-controlled
-  # source of truth; idempotent, safe to run every deploy. Give qBit's WebUI
-  # a moment to come up inside gluetun's netns first.
-  sleep 5
+  # source of truth; idempotent, safe to run every deploy. Only meaningful
+  # once the WebUI is up (gated above).
   if /srv/qbittorrent/apply-tuning.sh; then
     note "seedbox tuning asserted"
   else

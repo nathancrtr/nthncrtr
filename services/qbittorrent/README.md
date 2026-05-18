@@ -175,4 +175,31 @@ The expected steady-state result: each torrent's content downloads (from the swa
 
 ## Homepage widget
 
-The qBittorrent widget in `services/homepage/config/services.yaml` is active. It uses the WebUI at `http://natto:8080`, which still works since 8080 is published on gluetun. Add `HOMEPAGE_VAR_QBITTORRENT_PASSWORD=<password>` to `/srv/homepage/secrets.env` (mode 0600) and run `sudo ./deploy.sh homepage` to pick up the secret.
+The qBittorrent widget in `services/homepage/config/services.yaml` reaches qBit at **`http://gluetun:8080`** over the shared `qbittorrent_default` docker network — *not* `host.docker.internal` and *not* a host port. Since the Authelia cutover, 8080 is published on `127.0.0.1` only (safety rule 9), so the host-gateway path the widget used to take is dead. qBit shares gluetun's netns, so the reachable container name on that net is `gluetun`. gluetun blocks all inbound by default, so this also requires `FIREWALL_INPUT_PORTS=8080` in the gluetun service (see the compose comment). Add `HOMEPAGE_VAR_QBITTORRENT_PASSWORD=<password>` to `/srv/homepage/secrets.env` (mode 0600) and run `sudo ./deploy.sh homepage` to pick up the secret. Full rationale: `services/homepage/README.md` § "How widgets reach their backends".
+
+## Troubleshooting: WebUI down / 502 / silent crash-loop (stale single-instance lock)
+
+**Symptom:** `torrent.nthncrtr.com` 502s (or 302s straight to the Authelia portal with no qBit behind it), the Homepage widget errors, and `curl http://127.0.0.1:8080` on natto gives `000`. `docker ps` shows `qbittorrent` **Up** (not restarting) and gluetun **healthy** — so it looks fine. But `docker exec qbittorrent ps -ef | grep qbittorrent-nox` shows a **new PID every ~1–2s**, and `/config/qBittorrent/logs/qbittorrent.log` is just this, forever, with **no error**:
+
+```
+qBittorrent vX started. Process ID: NNN
+Using config directory: /config/qBittorrent
+qBittorrent termination initiated
+qBittorrent is now ready to exit
+```
+
+**Cause:** qBit's single-instance guard. It records its container hostname + PID in `/config/qBittorrent/lockfile` and opens `/config/qBittorrent/ipc-socket`. On a **clean** shutdown it removes both. On an **unclean** stop — host reboot, OOM, `docker kill`, or being killed inside gluetun's netns during a stack recreate — they're left behind carrying the *old* container's hostname. The next qBit can't verify that PID is dead on a "different host", conservatively assumes another instance is live, forwards its CLI args over the stale socket, and **exits 0**. s6 respawns it; same result; ~1s loop forever. The WebUI never binds. (This caused a multi-hour outage on 2026-05-18, triggered by the Authelia/`127.0.0.1` recreate.)
+
+**Fix (manual):** the files are transient runtime state — safe to delete (back up `/srv/qbittorrent/config/qBittorrent` first if paranoid):
+
+```sh
+ssh natto
+rm -f /srv/qbittorrent/config/qBittorrent/ipc-socket \
+      /srv/qbittorrent/config/qBittorrent/lockfile
+# s6 respawns qbit-nox within ~1s; it now starts clean and binds 8080.
+curl -s -o /dev/null -w '%{http_code}\n' http://127.0.0.1:8080/api/v2/app/version  # expect 200
+```
+
+No stack restart needed — just deleting the stale pair lets the next (already-looping) qbit-nox start clean. `deploy.sh qbittorrent` now self-heals this automatically: it waits for the WebUI to bind after `compose up`, and if it doesn't, clears the stale pair and restarts qBit once (and no longer blind-`sleep`s before `apply-tuning`).
+
+**Not** the cause, ruled out on 2026-05-18: the qBittorrent 5.x split profile layout (`config/`+`data/` subdirs). The LSIO image sets `XDG_CONFIG_HOME=/config` `XDG_DATA_HOME=/config`, so qBit uses the **flat** `/config/qBittorrent/` profile (config `qBittorrent.conf`, `BT_backup/`, etc. directly there). The `/config/qBittorrent/{config,data}/` subdirs qBit auto-creates are unused noise; don't migrate into them.

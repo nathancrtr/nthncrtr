@@ -80,6 +80,14 @@ file, warns if `secrets.env` is missing, brings the stack up, and probes
 `http://127.0.0.1:2283/api/server/ping`. First boot takes a minute or two
 while postgres initializes and Immich runs migrations.
 
+**DNS (one-time, Cloudflare dashboard — not in repo).** There is no
+`*.nthncrtr.com` wildcard; each subdomain is an explicit record. Add:
+Type **A**, Name **photos**, IPv4 **100.122.71.33** (natto's Tailscale IP,
+same as `music`/`radarr`), Proxy status **DNS only** (grey cloud — the
+proxy can't reach a `100.x` address, and this is what keeps it
+tailnet-only), TTL Auto. Until this exists `photos.nthncrtr.com` does not
+resolve even though Caddy is already serving the vhost.
+
 First use: open `https://photos.nthncrtr.com` (on the tailnet) → create the
 admin account → Account Settings → API Keys → create one for the Homepage
 widget (`HOMEPAGE_VAR_IMMICH_KEY` in `services/homepage/secrets.env`).
@@ -116,5 +124,6 @@ work noted in WORKLIST 7.1 — until then the library is **not** backed up.
 `cd /srv/immich && docker compose down` stops the stack (data in
 `/srv/immich/{library,db}` is preserved). To fully unwind: remove the
 `photos.nthncrtr.com` block from the Caddyfile + redeploy caddy, remove the
-Homepage entry, `docker compose down -v`, and `rm -rf /srv/immich`. There is
-no Cloudflare DNS record to remove (tailnet-only; the wildcard covers it).
+Homepage entry, `docker compose down -v`, and `rm -rf /srv/immich`. Also
+delete the `photos` A record in the Cloudflare dashboard (there is no
+wildcard — it is a real per-subdomain record that must be removed by hand).

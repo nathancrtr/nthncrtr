@@ -992,7 +992,10 @@ machine-learning container omitted for now.
 - Repo `git status` clean.
 - Port `2283` free on natto (verified 2026-05-18: not in `ss -tlnp`).
 - `/srv` has headroom (verified 2026-05-18: ~130 GB free on the 238 GB SSD).
-- Caddy + Cloudflare wildcard already cover `*.nthncrtr.com` (no new DNS).
+- Caddy auto-provisions TLS via DNS-01. NOTE: there is **no**
+  `*.nthncrtr.com` wildcard (drift found + fixed in CLAUDE.md 2026-05-18) —
+  a new `photos` A record → `100.122.71.33`, DNS-only, must be added in the
+  Cloudflare dashboard before the name resolves (operator step below).
 
 **Repo changes (this entry — done):**
 - `services/immich/`: `docker-compose.yml` (immich-server + valkey +
@@ -1014,6 +1017,8 @@ machine-learning container omitted for now.
   == `POSTGRES_PASSWORD` (A-Za-z0-9 only).
 - `sudo ./deploy.sh immich` brings up `immich_server/redis/postgres`;
   `curl -fsS http://127.0.0.1:2283/api/server/ping` → 200.
+- Cloudflare `photos` A record added (A / photos / 100.122.71.33 / DNS
+  only) — without it the name does not resolve even though Caddy serves it.
 - `sudo ./deploy.sh caddy` (after) → `https://photos.nthncrtr.com` reachable
   on the tailnet; admin account created; Homepage API key set + widget green.
 - Google Takeout (Photos) imported via `immich-go`; `df -h /` watched

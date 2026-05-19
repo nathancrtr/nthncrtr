@@ -10,7 +10,9 @@ You are working in the version-controlled config + operational runbook for a sma
 | **starmaya** | `kvass` (machine), `starmaya` (canonical) | Workshop appliance | Raspberry Pi, arm64, Debian 13 | `roaster-daemon` + `roaster-web` (Node.js, native systemd). On natto's tailnet as `kvass.tailaf7ea6.ts.net`. |
 | **workhorse** | `workhorse` | Client + dev | Intel Mac | Tailscale only — hosts no services. This is where you typically run from. |
 
-External access flow: `*.nthncrtr.com` → Cloudflare DNS (DNS-01 challenge token in `caddy.env`) → Tailscale IP of natto → Caddy on natto → local service.
+External access flow: `<svc>.nthncrtr.com` → Cloudflare DNS (DNS-01 challenge token in `caddy.env`) → Tailscale IP of natto → Caddy on natto → local service.
+
+**There is NO `*.nthncrtr.com` wildcard record.** Each subdomain is its own explicit Cloudflare **A record → natto's Tailscale IP `100.122.71.33`, proxy status "DNS only" (grey cloud)** — the proxy cannot route to a `100.x` Tailscale/CGNAT address, which is also what keeps these tailnet-only. A brand-new subdomain therefore needs this record added in the Cloudflare dashboard (dashboard state, not in repo — same class as the Jellyfin WAF rule); Caddy serves the vhost and auto-provisions TLS via DNS-01, but until the A record exists the name does not resolve at all. (The one exception is `play.nthncrtr.com`, which is Cloudflare-**proxied** for the public Jellyfin tunnel — see safety rule 8.)
 
 ## Repo layout
 

@@ -975,3 +975,62 @@ redeploy; Navidrome can't decrypt → run README § Recovery. Pre-encryption
 DB snapshots `/srv/navidrome/_pwreset_bak_2026051800{2552,3613}` are clean
 fallbacks (they predate encryption; they also contain old credentials —
 prune once satisfied).
+
+---
+
+## Phase 8 — Self-hosted Google Photos replacement (Immich)
+
+### 8.1 Immich service scaffolding  [DONE — repo; deploy + Takeout import pending operator]
+
+Stand up Immich on natto so the Google Photos image/video archive can be
+pulled local and browsed via a native app — the Photos analogue of the
+Nextcloud-for-Drive work (Phase 5). Operator decisions (2026-05-18):
+subdomain `photos.nthncrtr.com`; library on the internal SSD (`/srv`); the
+machine-learning container omitted for now.
+
+**Preconditions:**
+- Repo `git status` clean.
+- Port `2283` free on natto (verified 2026-05-18: not in `ss -tlnp`).
+- `/srv` has headroom (verified 2026-05-18: ~130 GB free on the 238 GB SSD).
+- Caddy + Cloudflare wildcard already cover `*.nthncrtr.com` (no new DNS).
+
+**Repo changes (this entry — done):**
+- `services/immich/`: `docker-compose.yml` (immich-server + valkey +
+  vectorchord-postgres; ML service commented out + `IMMICH_MACHINE_LEARNING_URL
+  =false`), `secrets.env.example`, `.gitignore`, `README.md`.
+- `services/caddy/Caddyfile`: `photos.nthncrtr.com → 127.0.0.1:2283`,
+  **no `import authelia`** (native mobile app breaks behind forward_auth,
+  same as Jellyfin — WORKLIST 6.4/6.6); tailnet-only (resolves to natto's
+  Tailscale IP), so safety rule 8 holds (Jellyfin still the only public svc).
+- `services/homepage/`: Immich widget (`type: immich`, version 2) +
+  `HOMEPAGE_VAR_IMMICH_KEY` in `secrets.env.example`.
+- `deploy.sh`: `deploy_immich` (+ default/usage lists); creates
+  `/srv/immich/{library,db}`, warns on missing secrets, warns under 20G
+  free on `/`, probes `:2283/api/server/ping`.
+- `CLAUDE.md`: architecture/repo-layout/services updated.
+
+**Success criteria (deployment — pending operator):**
+- `/srv/immich/secrets.env` (root:root, 0600) has matching `DB_PASSWORD`
+  == `POSTGRES_PASSWORD` (A-Za-z0-9 only).
+- `sudo ./deploy.sh immich` brings up `immich_server/redis/postgres`;
+  `curl -fsS http://127.0.0.1:2283/api/server/ping` → 200.
+- `sudo ./deploy.sh caddy` (after) → `https://photos.nthncrtr.com` reachable
+  on the tailnet; admin account created; Homepage API key set + widget green.
+- Google Takeout (Photos) imported via `immich-go`; `df -h /` watched
+  throughout (library is on the SSD).
+
+**Known follow-ups (not in 8.1):**
+- **Capacity risk:** a large Google Photos archive may not fit the ~130 GB
+  SSD free space. If it outgrows `/srv`, the library must move to dedicated
+  POSIX storage — exfat `/mnt/media` is NOT a safe target (corruption /
+  permissions). Measure the Takeout size before committing the full pull.
+- **Backups:** Immich is not yet wired into `services/backup` (needs a
+  logical `pg_dump` of `immich_postgres` + a copy of `/srv/immich/library`,
+  mirroring the Nextcloud approach). Until then the library is unbacked.
+- ML (face/smart search) can be enabled later by uncommenting the compose
+  service (see `services/immich/README.md § Machine learning`).
+
+**Rollback:** `cd /srv/immich && docker compose down` (data preserved).
+Full unwind: drop the `photos.nthncrtr.com` Caddy block + redeploy caddy,
+remove the Homepage entry, `docker compose down -v`, `rm -rf /srv/immich`.
+No Cloudflare record to remove (tailnet-only; wildcard covers it).

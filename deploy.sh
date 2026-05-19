@@ -11,8 +11,8 @@
 # One-time bootstrap (not handled here): git clone this repo to
 # /srv/nthncrtr-repo and put a read-only deploy key at /root/.ssh/.
 #
-# Services: caddy navidrome backup qbittorrent radarr sonarr prowlarr homepage nextcloud jellyfin cloudflared authelia pihole starmaya
-# Default (no service args): caddy navidrome backup qbittorrent radarr sonarr prowlarr homepage nextcloud jellyfin cloudflared
+# Services: caddy navidrome backup qbittorrent radarr sonarr prowlarr homepage nextcloud jellyfin immich cloudflared authelia pihole starmaya
+# Default (no service args): caddy navidrome backup qbittorrent radarr sonarr prowlarr homepage nextcloud jellyfin immich cloudflared
 #   — homepage is AFTER the *arrs/qBittorrent on purpose: its widgets reach
 #     them over those compose projects' (external) docker networks, which
 #     only exist once those projects have come up. Steady-state re-deploys
@@ -44,8 +44,8 @@ usage() {
   cat <<'EOF'
 Usage: sudo ./deploy.sh [--dry-run] [--yes-pihole] [services...]
 
-Services: caddy navidrome backup qbittorrent radarr sonarr prowlarr homepage nextcloud jellyfin cloudflared pihole starmaya
-Default (no service args): caddy navidrome backup qbittorrent radarr sonarr prowlarr homepage nextcloud jellyfin cloudflared
+Services: caddy navidrome backup qbittorrent radarr sonarr prowlarr homepage nextcloud jellyfin immich cloudflared pihole starmaya
+Default (no service args): caddy navidrome backup qbittorrent radarr sonarr prowlarr homepage nextcloud jellyfin immich cloudflared
 EOF
   exit "${1:-0}"
 }
@@ -63,7 +63,7 @@ done
 
 SERVICES=("$@")
 if [[ ${#SERVICES[@]} -eq 0 ]]; then
-  SERVICES=(caddy navidrome backup qbittorrent radarr sonarr prowlarr homepage nextcloud jellyfin cloudflared)
+  SERVICES=(caddy navidrome backup qbittorrent radarr sonarr prowlarr homepage nextcloud jellyfin immich cloudflared)
   (( YES_PIHOLE )) && SERVICES+=(pihole)
 fi
 
@@ -375,6 +375,44 @@ deploy_jellyfin() {
   # services/jellyfin/README.md (it depends on the router port-forward +
   # Cloudflare record, which deploy.sh cannot assert).
   verify_url http://127.0.0.1:8096/health 200 || true
+}
+
+deploy_immich() {
+  log "immich"
+  local CHANGED=0
+  (( DRY_RUN )) || {
+    # Parent + the two bind targets, on the internal ext4 (NOT exfat — see
+    # the compose header / README: postgres + the upload library both need
+    # POSIX semantics). Created root-owned and empty; the immich-server and
+    # postgres images chown their own subtrees on first init. Tailnet-only;
+    # the photos.nthncrtr.com Caddyfile vhost is deployed via `deploy.sh
+    # caddy` (run it after this on first stand-up).
+    [[ -d /srv/immich ]]         || { install -d -o root -g root -m 0755 /srv/immich;         note "created /srv/immich"; }
+    [[ -d /srv/immich/library ]] || { install -d -o root -g root -m 0755 /srv/immich/library; note "created /srv/immich/library"; }
+    [[ -d /srv/immich/db ]]      || { install -d -o root -g root -m 0755 /srv/immich/db;      note "created /srv/immich/db"; }
+  }
+  install_file "$REPO_ROOT/services/immich/docker-compose.yml" /srv/immich/docker-compose.yml
+  (( DRY_RUN )) && return 0
+  # Without secrets.env postgres has no superuser password and immich-server
+  # can't connect — surface it rather than letting the stack flap.
+  if [[ ! -f /srv/immich/secrets.env ]]; then
+    warn "/srv/immich/secrets.env not found — see services/immich/secrets.env.example"
+    warn "Immich + postgres will not initialize until DB_PASSWORD/POSTGRES_PASSWORD are set (same value)."
+  fi
+  # Capacity guard: the library lives on / (the 238G SSD). A full Google
+  # Photos import can be large; a full / silently breaks more than Immich
+  # (see CLAUDE.md § disk space). Warn under ~20G free.
+  local avail_g
+  avail_g=$(df -BG --output=avail / 2>/dev/null | tail -1 | tr -dc '0-9')
+  if [[ -n $avail_g && $avail_g -lt 20 ]]; then
+    warn "only ${avail_g}G free on / — Immich library is on the SSD; watch capacity (README § caveat)"
+  fi
+  compose_up immich
+  sleep 5
+  # First boot runs DB init + migrations (can take a minute); ping answers
+  # 200 once the server is up. Tailnet-only — no public URL to verify here.
+  verify_url http://127.0.0.1:2283/api/server/ping 200 || \
+    warn "immich not answering yet — first boot runs migrations; check 'docker logs immich_server'"
 }
 
 deploy_cloudflared() {

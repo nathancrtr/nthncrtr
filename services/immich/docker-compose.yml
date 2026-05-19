@@ -1,0 +1,144 @@
+# Immich — self-hosted photo/video backup (the destination for the
+# Google Photos export). Managed by deploy.sh (sudo ./deploy.sh immich).
+#
+# Topology (trimmed from the upstream reference compose):
+#   immich-server  — API + web + microservices (one merged container)
+#   immich-redis   — valkey, queue/cache (NOT persisted; safe to recreate)
+#   immich-db      — postgres with the VectorChord/pgvecto vector extension
+#                    (Immich pins this exact image; a plain postgres will
+#                    NOT work — it needs the vector ext for smart search)
+# The machine-learning container (face/object recognition, CLIP smart
+# search) is deliberately OMITTED (operator decision — heavy CPU/RAM on the
+# Beelink). `IMMICH_MACHINE_LEARNING_URL=false` tells the server not to call
+# it, so browsing/albums/mobile backup all work; only smart search & face
+# recognition are absent. To enable later: uncomment the immich-machine-
+# learning service + the model-cache volume, drop the `=false` env line, and
+# redeploy. See services/immich/README.md § Machine learning.
+#
+# Reachability: tailnet-only, like Nextcloud — NOT internet-exposed (safety
+# rule 8: Jellyfin is the only public service). Reached three equivalent ways:
+#   https://photos.nthncrtr.com            (Caddy; resolves to natto's
+#                                            Tailscale IP via Cloudflare DNS,
+#                                            so only on the tailnet)
+#   http://natto.tailaf7ea6.ts.net:2283    (tailnet, raw)
+#   http://natto:2283                      (LAN, raw)
+# There is intentionally NO `import authelia` on the Caddy vhost: Immich's
+# native mobile app (the primary auto-backup mechanism) breaks behind
+# forward_auth for the same reason Jellyfin's native clients do (WORKLIST
+# 6.4/6.6). The gate is Immich's own per-user accounts + tailnet-only reach.
+# Don't put photos.nthncrtr.com behind Authelia.
+#
+# Data layout on natto (ALL on the Beelink's internal ext4 — NOT the exfat
+# 5TB; Immich's postgres + upload library need POSIX ownership/locking/atomic
+# renames exfat can't give, same reasoning as Nextcloud/Jellyfin):
+#   /srv/immich/library  → the photo/video library (UPLOAD_LOCATION)
+#   /srv/immich/db       → postgres datadir
+# CAPACITY CAVEAT: /srv had ~130 GB free when this was set up. A full Google
+# Photos archive can exceed that. Watch `df -h /` during/after the import; if
+# the archive is large this library may have to move to dedicated storage
+# (exfat is NOT a safe target for it — see README). This is a known,
+# accepted-for-now risk recorded in WORKLIST 7.1.
+#
+# 2283 is Immich's server port (free on natto: 8080 gluetun, 8081 nextcloud,
+# 8053 pihole admin, 8096 jellyfin, 4533 navidrome, 3000 homepage). Published
+# on 0.0.0.0 (like Nextcloud) so the tailnet/LAN raw URLs and the Homepage
+# widget (via host.docker.internal) all reach it; no Authelia means 0.0.0.0
+# is not an unauthenticated door (Immich has its own login) — this is the
+# Nextcloud model, NOT the *arrs' 127.0.0.1 + Authelia model (safety rule 9).
+#
+# Secrets: DB_PASSWORD (immich-server's connection secret) and
+# POSTGRES_PASSWORD (what the postgres image initializes the superuser with)
+# MUST be the same value. Both live in secrets.env (NOT in the repo — see
+# secrets.env.example). env_file is `required: false` so `docker compose
+# config` still parses on workhorse where the file is absent.
+
+name: immich
+
+services:
+  immich-server:
+    image: ghcr.io/immich-app/immich-server:release
+    container_name: immich_server
+    ports:
+      - "2283:2283"
+    volumes:
+      - ./library:/usr/src/app/upload
+      - /etc/localtime:/etc/localtime:ro
+    environment:
+      - DB_HOSTNAME=immich-db
+      - DB_USERNAME=postgres
+      - DB_DATABASE_NAME=immich
+      - REDIS_HOSTNAME=immich-redis
+      # No ML container deployed — tell the server not to call one (otherwise
+      # every asset queues a smart-search/face job that errors forever).
+      - IMMICH_MACHINE_LEARNING_URL=false
+      - TZ=America/New_York
+    env_file:
+      # secrets.env is NOT in the repo — see secrets.env.example for the
+      # variable list. On natto: /srv/immich/secrets.env, mode 0600.
+      # Optional so `docker compose config` works on workhorse where the file
+      # is intentionally absent.
+      - path: secrets.env
+        required: false
+    depends_on:
+      immich-redis:
+        condition: service_started
+      immich-db:
+        condition: service_healthy
+    restart: unless-stopped
+    healthcheck:
+      disable: false
+
+  # --- Machine learning (DISABLED — see header). To enable: uncomment this
+  #     whole service AND the `model-cache` volume at the bottom, remove the
+  #     IMMICH_MACHINE_LEARNING_URL=false line above, and redeploy. ---
+  # immich-machine-learning:
+  #   image: ghcr.io/immich-app/immich-machine-learning:release
+  #   container_name: immich_machine_learning
+  #   volumes:
+  #     - model-cache:/cache
+  #   env_file:
+  #     - path: secrets.env
+  #       required: false
+  #   restart: unless-stopped
+  #   healthcheck:
+  #     disable: false
+
+  immich-redis:
+    image: docker.io/valkey/valkey:9
+    container_name: immich_redis
+    healthcheck:
+      test: ["CMD-SHELL", "redis-cli ping | grep -q PONG"]
+      interval: 15s
+      timeout: 5s
+      retries: 5
+    restart: unless-stopped
+
+  immich-db:
+    image: ghcr.io/immich-app/postgres:14-vectorchord0.4.3-pgvectors0.2.0
+    container_name: immich_postgres
+    environment:
+      - POSTGRES_USER=postgres
+      - POSTGRES_DB=immich
+      - POSTGRES_INITDB_ARGS=--data-checksums
+    env_file:
+      # Provides POSTGRES_PASSWORD (== DB_PASSWORD; see header / example).
+      - path: secrets.env
+        required: false
+    volumes:
+      - ./db:/var/lib/postgresql/data
+    # Immich's documented value; the entrypoint tunes the vector ext with it.
+    shm_size: 128mb
+    healthcheck:
+      test:
+        [
+          "CMD-SHELL",
+          "pg_isready --dbname=immich --username=postgres || exit 1",
+        ]
+      interval: 15s
+      timeout: 5s
+      retries: 10
+    restart: unless-stopped
+
+# Uncomment together with the immich-machine-learning service above.
+# volumes:
+#   model-cache:

@@ -110,6 +110,22 @@
           key: '{{HOMEPAGE_VAR_JELLYFIN_KEY}}'
           enableBlocks: true
 
+    - Immich:
+        # Tailnet-only. href = the Caddy URL (resolves to natto's Tailscale
+        # IP — works in the browser on the tailnet, NOT internet-exposed);
+        # widget url = host.docker.internal because the homepage container
+        # can't resolve MagicDNS names and Immich publishes on 0.0.0.0:2283
+        # (same pattern as the Nextcloud/Jellyfin widgets above).
+        href: https://photos.nthncrtr.com
+        icon: immich.png
+        server: my-docker
+        container: immich_server
+        widget:
+          type: immich
+          url: http://host.docker.internal:2283
+          key: '{{HOMEPAGE_VAR_IMMICH_KEY}}'
+          version: 2
+
 - starmaya:
     - Coffee Roasting:
         href: https://starmaya.nthncrtr.com

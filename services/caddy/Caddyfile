@@ -79,6 +79,18 @@ starmaya.nthncrtr.com {
 	reverse_proxy 100.65.46.92:8080
 }
 
+# Immich — self-hosted photo/video backup (Google Photos replacement).
+# Tailnet-only like Nextcloud: this name resolves (via Cloudflare DNS) to
+# natto's Tailscale IP, so it is NOT internet-exposed (Jellyfin remains the
+# only public service — safety rule 8; Immich is not on the Cloudflare
+# Tunnel). Deliberately NO `import authelia`: Immich's native mobile app
+# (the primary auto-backup path) breaks behind forward_auth, same as
+# Jellyfin's native clients (WORKLIST 6.4/6.6). The gate is tailnet-only
+# reach + Immich's own per-user accounts. See services/immich/README.md.
+photos.nthncrtr.com {
+	reverse_proxy 127.0.0.1:2283
+}
+
 # Jellyfin — the ONE internet-exposed service (operator decision, WORKLIST
 # 6.6). This block is the INSIDE-ONLY path. Read before touching:
 #

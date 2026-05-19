@@ -1067,3 +1067,156 @@ wildcard — it is a real per-subdomain record that must be removed by hand).
 - 49 GB Takeout zip retained at `/mnt/media/_unsorted/takeout/` as cold backup
   (the file the Asset Tracking Report was generated from; `/mnt/media` has
   1.8 TB free — no pressure to delete). Operator may remove at will.
+
+### 8.1a Nightly tarball: exclude Immich library + datadir; pg_dumpall instead  [DONE]
+
+Standalone bugfix-ahead-of-redesign: the post-8.1 state had `backup.sh`
+about to hot-tar the now-populated 25 GB `/srv/immich/library` and the
+live Postgres+VectorChord datadir at `/srv/immich/db` starting with
+tomorrow's 03:33 UTC run — same unrestorable failure mode that
+`/srv/nextcloud/{data,db}` is excluded to avoid.
+
+**Repo changes (done 2026-05-19):**
+- `services/backup/backup.sh`: `EXCLUDES` adds `/srv/immich/{library,db}`;
+  new block runs `docker exec immich_postgres pg_dumpall --clean --if-
+  exists --username=postgres | gzip` → `/srv/immich/db-dump.sql.gz`.
+  `pg_dumpall` (not `pg_dump`) is Immich's documented recipe — it carries
+  the `CREATE EXTENSION` statements for VectorChord/pgvector so restore
+  into the matching `ghcr.io/immich-app/postgres:*-vectorchord*-pgvectors*`
+  image is valid. Skipped silently if `immich_postgres` is absent; dump
+  failure warns but does not fail (mirrors the Nextcloud block).
+- `services/backup/README.md`: Immich added to the "NOT in nightly
+  tarball" list with rationale + a "Restoring Immich" subsection.
+- `services/immich/README.md` § Backups: refreshed (DB now wired; library
+  still pending Phase 8.2).
+
+**Outcome (2026-05-19 21:51 UTC manual smoke run):**
+- New journal line: `[backup] wrote Immich DB dump /srv/immich/db-dump.sql.gz (20119232 bytes)`.
+- Tarball stayed in the 1.1 GB band (1,141,280,142 B) — library + datadir
+  correctly excluded, dump correctly included. Tomorrow's automated run
+  is now safe.
+
+### 8.2 3-2-1 backup tier: restic + Backblaze B2  [DESIGN — TO IMPLEMENT]
+
+**Why this exists.** Current state is *one* copy of every irreplaceable
+dataset (Immich library, Nextcloud data, music) plus tarballs on the same
+physical Beelink chassis as the live data. One PSU surge / fire / rogue
+`rm -rf` ends both. This phase brings the irreplaceable tier to true
+3-2-1 (3 copies, 2 media classes, 1 offsite). Operator decisions
+(2026-05-19): offsite target **Backblaze B2**; music **Tier A**
+(back up the full 257 GB library); **no** Layer-3 cold/air-gapped SSD.
+
+**Architecture:**
+
+```
+                 +-- /srv/immich/library  -- restic (tag: immich-library) -+
+                 |                                                          |
+ natto SSD ext4 -+-- /srv/nextcloud/data  -- restic (tag: nextcloud-data) -+
+                 |                                                          |
+                 +-- /srv/{*}/*           -- restic (tag: system)          -+
+                 |                                                          |
+                 +-- /srv/{im,nc}/db-dump.sql.gz from backup.sh             |
+                                                                            |
+ natto HDD exfat ---- /mnt/media/music    -- restic (tag: music)           -+
+                                                                            v
+                                       ONE local restic repo at
+                                  /mnt/media/backups/restic-repo/
+                                                                            |
+                                                  restic copy ----+         |
+                                                                  v         |
+                                              Backblaze B2 bucket  <--------+
+                                              (encrypted at source)
+```
+
+Single restic repository, **tags** per dataset (`system`, `nextcloud-data`,
+`nextcloud-db`, `immich-library`, `immich-db`, `music`). Single repository
+chosen over per-service repos: better cross-dataset dedup (e.g., service
+config copies that appear in both `system` snapshots and inside the
+nightly tarball), one password to manage, one credential set, simpler
+operationally; per-tag retention via `restic forget --tag X --keep-...`
+is supported and gives the same control. Trade-off (noted on purpose): a
+single restic password unlocks all four datasets — acceptable for a
+single-operator household; not acceptable in a multi-tenant context.
+
+**Repo changes (planned):**
+- `services/backup/restic-backup.sh` (deploys to `/usr/local/sbin/restic-
+  backup`): per-tag `restic backup` runs in sequence (system → nc-files →
+  nc-db dump → immich-library → immich-db dump → music), then
+  `restic copy` to the B2 secondary, then `restic forget --prune --tag X`
+  per tag. DB dumps are produced by the existing `backup.sh` plumbing
+  (the `.sql.gz` artifacts) — restic just picks them up as ordinary
+  files; scheduling order ensures freshness.
+- `services/backup/restic-backup.{service,timer}`: daily at ~04:30 UTC
+  (after `natto-backup.timer` at 03:30 has written the `.sql.gz` dumps),
+  jittered. Music has its own slower cadence — weekly Sunday — since the
+  library changes rarely; keeps daily wall-time bounded.
+- `services/backup/restic-bootstrap.md`: one-shot setup runbook —
+  create the B2 bucket + application key (master key NOT used); install
+  the restic binary on natto via apt; populate `/srv/backup/secrets.env`
+  with `B2_ACCOUNT_ID`, `B2_ACCOUNT_KEY`, `RESTIC_PASSWORD`,
+  `RESTIC_REPOSITORY` (local), `RESTIC_REPOSITORY_B2`; `restic init` both
+  repos; write the repo password to a paper-printed offline copy
+  (the only thing that can't itself be backed up from inside the system).
+- `services/backup/secrets.env.example` + `.gitignore`: standard pattern,
+  matching the rest of the repo.
+- `bootstrap/natto.sh` `step_restic`: idempotent install of the restic
+  binary (apt `restic`); deploy of the new script + units.
+- `services/backup/README.md` § Restoring from restic: explicit restore
+  paths for each tag, including the order-of-operations for Immich (DB
+  dump → start `immich-db` empty → `psql -f` → restore library files →
+  `up -d`).
+
+**Retention defaults (per-tag):**
+- daily 14, weekly 8, monthly 12, yearly forever (system, nc-data, nc-db,
+  immich-db, immich-library — bounded by dedup so size growth is roughly
+  linear in *unique* photos, not snapshot count).
+- music: weekly 8, monthly 12, yearly forever (cadence matches its weekly
+  schedule).
+
+**Sizing + cost (today's footprint):**
+- system tag: ~500 MB (configs + the 20 MB Immich dump + ~700 KB NC dump)
+- nextcloud-data: ~164 MB today (growing — Drive migration not finished)
+- immich-library: ~25 GB (growing — mobile auto-backup)
+- music: 257 GB
+- **Total at-rest in B2 (post-dedup, post-compress): ~280-300 GB.**
+- B2 cost: **~$1.75/month** storage at $6/TB/month. Egress is free up to
+  3× monthly storage; a full restore burst stays under that ceiling.
+- First-upload bandwidth: 280 GB. GFiber upload pegs around 1 Gbps in
+  practice → first sync ~40-90 min wall.
+
+**Preconditions:**
+- B2 account + bucket + application key (scoped to the bucket, not the
+  master key). Operator step; not in repo.
+- restic binary on natto (Ubuntu 26.04 `apt install restic` → recent
+  enough; `restic self-update` if not).
+- `/mnt/media/backups/restic-repo/` doesn't exist yet (or is empty) when
+  `restic init` runs.
+
+**Success criteria:**
+- `sudo /usr/local/sbin/restic-backup` runs clean end-to-end on natto:
+  populates the local repo, copies all snapshots to B2, applies retention.
+- `restic snapshots --tag immich-library` lists today's snapshot.
+- **Restore drill** (the only proof a backup works): on natto in a scratch
+  dir, `restic restore latest --tag system --target /tmp/restore-test` and
+  diff the result against the live `/srv` (excluding generated files).
+- B2 bucket browseable via the B2 console; size matches local repo (±%).
+- `services/backup/README.md` documents the restore-from-restic
+  procedures and the operator paper-key location.
+
+**Known follow-ups (not in 8.2):**
+- A small healthcheck / Homepage widget showing last-run timestamps per
+  tag (would surface a silent-failure scenario).
+- Periodic `restic check --read-data-subset=5%` on the B2 repo — restic's
+  own integrity check; can run monthly out-of-band.
+- The `caddy.env` + various `secrets.env` files are still natto-plaintext.
+  Phase 8.3 candidate: `age`-encrypted secrets in the repo (recipient key
+  on workhorse + paper offline) so secrets ride the existing
+  repo-→-GitHub-→-workhorse 3-2-1 path that configs already use.
+- WORKLIST 8.1 said Immich-library backups would land here — that's this
+  entry; closing that follow-up when 8.2 is `[DONE]`.
+
+**Rollback:** `systemctl disable --now restic-backup.timer` and
+`rm -rf /mnt/media/backups/restic-repo`. The B2 bucket is the only piece
+the operator has to remove by hand (or just stop paying — B2 deletes
+after the configured lifecycle). No live-service impact at any point —
+this layer is purely additive.

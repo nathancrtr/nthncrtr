@@ -40,6 +40,16 @@ services:
       - ./config:/config
     extra_hosts:
       - "host.docker.internal:host-gateway"
+    networks:
+      # default = prowlarr's own net (prowlarr_default, used by Homepage's
+      # widget per services/homepage/docker-compose.yml).
+      # arrnet = the shared *arr stack net so Prowlarr can reach Sonarr/Radarr
+      # by container name (http://sonarr:8989, http://radarr:7878). The
+      # host.docker.internal path is broken since safety rule 9 rebound those
+      # WebUI ports to 127.0.0.1 — arrnet is private container-to-container,
+      # no LAN exposure. Created idempotently by deploy.sh.
+      - default
+      - arrnet
     ports:
       # 127.0.0.1 only: the sole intended path is prowlarr.nthncrtr.com →
       # Caddy (native on natto, so localhost) → Authelia. config.xml has
@@ -49,3 +59,10 @@ services:
       - "127.0.0.1:9696:9696"
     restart: unless-stopped
     mem_limit: 256m
+
+networks:
+  default:
+  # Shared *arr-stack net, manually created by deploy.sh (idempotent).
+  # Marked external so Prowlarr attaches rather than tries to manage it.
+  arrnet:
+    external: true

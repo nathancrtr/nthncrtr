@@ -17,7 +17,7 @@ Prowlarr, hands grabs to qBittorrent, imports completed files into
 | Container / image | `radarr` / `lscr.io/linuxserver/radarr:latest`, branch `master` |
 | WebUI / auth | `7878`; `AuthenticationRequired = DisabledForLocalAddresses` (Authelia fronts the public route — see `services/authelia/`) |
 | Root folder | `/mnt/media/video/movies` |
-| Download client | qBittorrent at `host.docker.internal:8080`, **category `movies`** |
+| Download client | qBittorrent at `gluetun:8080` (qBit shares gluetun's netns), **category `movies`**. Radarr joins `qbittorrent_default` so it reaches gluetun by name; the 127.0.0.1 host-publish path is dead (safety rule 9). |
 | API key | `/srv/radarr/config/config.xml` (`<ApiKey>`); mirrored to `HOMEPAGE_VAR_RADARR_KEY` in `/srv/homepage/secrets.env` for the Homepage widget |
 | Mounts | `./config:/config`, `/mnt/media:/mnt/media`, `mem_limit: 512m` |
 
@@ -51,10 +51,13 @@ cd /srv/nthncrtr-repo && git pull && sudo ./deploy.sh radarr
 First-run UI steps (only needed on a fresh `/srv/radarr/config`):
 
 1. **Settings → Media Management → Root Folders**: add `/mnt/media/video/movies`
-2. **Settings → Download Clients**: add qBittorrent — `host.docker.internal`,
-   port `8080`, category `movies`. (qBit's localhost-bypass does **not** apply
-   here: Radarr reaches qBit over the Docker bridge, so it needs the WebUI
-   username/password.)
+2. **Settings → Download Clients**: add qBittorrent — host `gluetun`, port
+   `8080`, category `movies`. Radarr joins `qbittorrent_default` (the
+   gluetun/qBit compose net, subnet `172.23.0.0/16`) so it can resolve
+   `gluetun` by name; that subnet is in qBit's `WebUI\AuthSubnetWhitelist`,
+   so no second login. The old `host.docker.internal:8080` path stopped
+   working on 2026-05-18 when safety rule 9 rebound qBit's WebUI to
+   `127.0.0.1`.
 3. **Settings → General → Security**: copy the API key, then on natto:
    ```sh
    sudo -e /srv/homepage/secrets.env   # add HOMEPAGE_VAR_RADARR_KEY=<paste>

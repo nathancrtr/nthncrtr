@@ -16,7 +16,7 @@ Prowlarr, hands grabs to qBittorrent, imports completed files into
 | Container / image | `sonarr` / `lscr.io/linuxserver/sonarr:latest`, branch `main` |
 | WebUI / auth | `8989`; `AuthenticationRequired = DisabledForLocalAddresses` (Authelia fronts the public route) |
 | Root folder | `/mnt/media/video/tv` |
-| Download client | qBittorrent at `host.docker.internal:8080`, **category `tv`** |
+| Download client | qBittorrent at `gluetun:8080` (qBit shares gluetun's netns), **category `tv`**. Sonarr joins `qbittorrent_default` so it reaches gluetun by name; the 127.0.0.1 host-publish path is dead (safety rule 9). |
 | API key | `/srv/sonarr/config/config.xml` (`<ApiKey>`); mirrored to `HOMEPAGE_VAR_SONARR_KEY` in `/srv/homepage/secrets.env` |
 | Mounts | `./config:/config`, `/mnt/media:/mnt/media`, `mem_limit: 512m` |
 
@@ -53,9 +53,12 @@ cd /srv/nthncrtr-repo && git pull && sudo ./deploy.sh sonarr
 First-run UI steps (only on a fresh `/srv/sonarr/config`):
 
 1. **Settings → Media Management → Root Folders**: add `/mnt/media/video/tv`
-2. **Settings → Download Clients**: add qBittorrent — `host.docker.internal`,
-   port `8080`, category `tv`. (Reaches qBit over the Docker bridge, so it
-   needs the WebUI username/password — localhost-bypass does not apply.)
+2. **Settings → Download Clients**: add qBittorrent — host `gluetun`, port
+   `8080`, category `tv`. Sonarr joins `qbittorrent_default` (the gluetun/qBit
+   compose net, subnet `172.23.0.0/16`) so it can resolve `gluetun` by name;
+   that subnet is in qBit's `WebUI\AuthSubnetWhitelist`, so no second login.
+   The old `host.docker.internal:8080` path stopped working on 2026-05-18 when
+   safety rule 9 rebound qBit's WebUI to `127.0.0.1`.
 3. **Settings → General → Security**: copy the API key, then on natto:
    ```sh
    sudo -e /srv/homepage/secrets.env   # add HOMEPAGE_VAR_SONARR_KEY=<paste>

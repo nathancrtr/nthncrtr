@@ -36,6 +36,19 @@ services:
       - /mnt/media:/mnt/media
     extra_hosts:
       - "host.docker.internal:host-gateway"
+    networks:
+      # default = radarr's own net (radarr_default; Homepage joins it).
+      # arrnet = shared *arr net so Prowlarr (also on arrnet) can reach Radarr
+      # by name at http://radarr:7878.
+      # qbittorrent_default = qBittorrent's compose net (created by the
+      # qbittorrent stack — Radarr attaches as external). Lets the download
+      # client reach gluetun:8080 by name; the 172.23.0.0/16 subnet is
+      # already in qBit's WebUI auth-bypass whitelist, so no second login.
+      # The old host.docker.internal:8080 path was broken when safety rule 9
+      # rebound qBit's WebUI port to 127.0.0.1 (2026-05-18).
+      - default
+      - arrnet
+      - qbittorrent_default
     ports:
       # 127.0.0.1 only: the sole intended path is radarr.nthncrtr.com →
       # Caddy (native on natto, so localhost) → Authelia. config.xml has
@@ -45,3 +58,13 @@ services:
       - "127.0.0.1:7878:7878"
     restart: unless-stopped
     mem_limit: 512m
+
+networks:
+  default:
+  # Shared *arr-stack net (Prowlarr↔*arrs). Created idempotently by deploy.sh.
+  arrnet:
+    external: true
+  # Created by the qbittorrent compose project; Radarr attaches as external
+  # so it can reach gluetun:8080 (qBit shares gluetun's netns).
+  qbittorrent_default:
+    external: true

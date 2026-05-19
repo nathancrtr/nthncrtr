@@ -109,6 +109,22 @@ compose_up() {
   (cd "/srv/$svc" && docker compose up -d)
 }
 
+# arrnet is the shared *arr-stack docker network (Prowlarr ↔ Sonarr/Radarr).
+# It's external (declared `external: true` in the prowlarr/sonarr/radarr
+# compose files), so the compose `up` calls expect it to exist. Subnet is
+# pinned to keep it deterministic and out of the way of the other compose
+# defaults already in use (172.17–172.28). No-op when present.
+ensure_arrnet() {
+  (( DRY_RUN )) && {
+    docker network inspect arrnet >/dev/null 2>&1 \
+      || note "would: docker network create arrnet --subnet 172.29.0.0/16"
+    return 0
+  }
+  docker network inspect arrnet >/dev/null 2>&1 && return 0
+  docker network create arrnet --subnet 172.29.0.0/16 --label managed-by=nthncrtr-repo >/dev/null
+  note "created docker network: arrnet (172.29.0.0/16)"
+}
+
 verify_url() {
   local url=$1 want=${2:-200} code
   code=$(curl -sSL -o /dev/null -m 10 -w '%{http_code}' "$url" 2>/dev/null || echo "000")
@@ -289,6 +305,7 @@ deploy_radarr() {
   }
   install_file "$REPO_ROOT/services/radarr/docker-compose.yml" /srv/radarr/docker-compose.yml
   (( DRY_RUN )) && return 0
+  ensure_arrnet
   compose_up radarr
   sleep 3
   verify_url https://radarr.nthncrtr.com 200 || true
@@ -303,6 +320,7 @@ deploy_sonarr() {
   }
   install_file "$REPO_ROOT/services/sonarr/docker-compose.yml" /srv/sonarr/docker-compose.yml
   (( DRY_RUN )) && return 0
+  ensure_arrnet
   compose_up sonarr
   sleep 3
   verify_url https://sonarr.nthncrtr.com 200 || true
@@ -317,6 +335,7 @@ deploy_prowlarr() {
   }
   install_file "$REPO_ROOT/services/prowlarr/docker-compose.yml" /srv/prowlarr/docker-compose.yml
   (( DRY_RUN )) && return 0
+  ensure_arrnet
   compose_up prowlarr
   sleep 3
   verify_url https://prowlarr.nthncrtr.com 200 || true

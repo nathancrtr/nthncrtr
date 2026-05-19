@@ -117,11 +117,20 @@ Immich run the "Smart Search" and "Face Detection" jobs over the library.
 
 ## Backups
 
-Not yet wired into `services/backup`. The nightly natto tarball excludes
-large/DB data dirs by policy (see `services/backup/README.md`); like
-Nextcloud, Immich needs a logical `pg_dump` of `immich_postgres` plus a
-copy of `/srv/immich/library`. Adding that to `backup.sh` is follow-up
-work noted in WORKLIST 7.1 — until then the library is **not** backed up.
+Half wired. The nightly natto tarball excludes the bulk paths
+(`/srv/immich/{library,db}`) and instead writes a logical `pg_dumpall` of
+`immich_postgres` into `/srv/immich/db-dump.sql.gz` just before the tar
+runs — that file IS under `/srv` and so IS captured. The dump uses
+Immich's documented `pg_dumpall --clean --if-exists` recipe, which carries
+the `CREATE EXTENSION` statements for VectorChord/pgvector so the restore
+is valid against the matching `ghcr.io/immich-app/postgres:*-vectorchord*-
+pgvectors*` image. See `services/backup/README.md § Restoring Immich`.
+
+What's still not backed up: **`/srv/immich/library`** (the actual photos
+and videos). It's intentionally excluded from the nightly tarball for the
+same size-class reason Nextcloud's `data/` is excluded — both are slated
+for the restic + Backblaze B2 redesign in WORKLIST 8.2. Until that lands
+the library is the only copy.
 
 ## Rollback
 

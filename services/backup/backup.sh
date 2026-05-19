@@ -9,6 +9,13 @@
 #                                     tarball stays on the local-only drive)
 #   /etc/systemd/system/caddy.service
 #
+# Excluded (handled out-of-band — see EXCLUDES below):
+#   /srv/nextcloud/{data,db}       — bulk user data + live MariaDB datadir
+#   /srv/immich/{library,db}       — bulk photo/video library + live postgres
+#                                     datadir
+# Each excluded service's DB is captured logically (mariadb-dump / pg_dumpall)
+# into a *.sql.gz alongside its compose dir, which IS captured.
+#
 # Destination:
 #   /mnt/media/backups/natto-YYYY-MM-DD.tgz
 #
@@ -32,15 +39,19 @@ SOURCES=(
   /etc/systemd/system/caddy.service
 )
 
-# Nextcloud's bulk data and the live MariaDB datadir are excluded from the
-# file tar: hot-copying an InnoDB datadir yields an unrestorable archive, and
-# the user data is too large to duplicate nightly. Instead we dump the DB
-# logically (below) into /srv/nextcloud/db-dump.sql.gz, which IS under /srv
-# and so IS captured; the user data is mirrored weekly by
-# nextcloud-data-sync.timer. See services/nextcloud/README.md.
+# Bulk service data and live DB datadirs are excluded from the file tar:
+# hot-copying an active DB datadir yields an unrestorable archive, and user-
+# scale data is too large to duplicate nightly. Instead we dump each DB
+# logically (below) into a *.sql.gz alongside its compose dir — those files
+# ARE under /srv and so ARE captured. Tier-A bulk data (Nextcloud user files;
+# Immich library) needs its own backup path — Nextcloud has the weekly mirror
+# via nextcloud-data-sync.timer; the Immich library is not yet covered here
+# (WORKLIST 8.2 / restic). See services/{nextcloud,immich}/README.md.
 EXCLUDES=(
   --exclude=/srv/nextcloud/data
   --exclude=/srv/nextcloud/db
+  --exclude=/srv/immich/library
+  --exclude=/srv/immich/db
 )
 
 # --- preflight ---------------------------------------------------------------
@@ -82,6 +93,30 @@ if command -v docker >/dev/null 2>&1 \
   else
     rm -f "$nc_tmp"
     echo "[backup] WARNING: Nextcloud DB dump failed — tarball will carry the previous dump (if any)" >&2
+  fi
+fi
+
+# --- Immich logical DB dump ---------------------------------------------------
+# Mirrors the Nextcloud block. `pg_dumpall --clean --if-exists` is Immich's
+# own documented backup recipe — it captures globals (roles) plus the
+# `immich` database AND the CREATE EXTENSION statements for the VectorChord /
+# pgvector extensions, which the matching `ghcr.io/immich-app/postgres:*-
+# vectorchord*-pgvectors*` image is what makes them restorable. The official
+# postgres image trusts local-socket connections as the postgres user, so no
+# password env shim is needed. As with Nextcloud the dump must be loud-but-
+# non-fatal so it can't sink the rest of the nightly backup.
+if command -v docker >/dev/null 2>&1 \
+   && docker ps --format '{{.Names}}' 2>/dev/null | grep -qx immich_postgres; then
+  im_dump=/srv/immich/db-dump.sql.gz
+  im_tmp="$im_dump.partial"
+  if docker exec immich_postgres \
+       pg_dumpall --clean --if-exists --username=postgres \
+       2>/dev/null | gzip > "$im_tmp"; then
+    mv -f "$im_tmp" "$im_dump"
+    printf '[backup] wrote Immich DB dump %s (%d bytes)\n' "$im_dump" "$(stat -c%s "$im_dump")"
+  else
+    rm -f "$im_tmp"
+    echo "[backup] WARNING: Immich DB dump failed — tarball will carry the previous dump (if any)" >&2
   fi
 fi
 

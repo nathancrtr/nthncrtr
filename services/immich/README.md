@@ -86,7 +86,11 @@ Type **A**, Name **photos**, IPv4 **100.122.71.33** (natto's Tailscale IP,
 same as `music`/`radarr`), Proxy status **DNS only** (grey cloud — the
 proxy can't reach a `100.x` address, and this is what keeps it
 tailnet-only), TTL Auto. Until this exists `photos.nthncrtr.com` does not
-resolve even though Caddy is already serving the vhost.
+resolve even though Caddy is already serving the vhost. After adding it,
+inside (Pi-hole) clients may still see `NXDOMAIN` for up to ~30 min if the
+name was queried earlier — Pi-hole's negative cache, not a misconfig; wait
+it out, don't restart Pi-hole (CLAUDE.md § "New-subdomain gotcha — Pi-hole
+negative cache").
 
 First use: open `https://photos.nthncrtr.com` (on the tailnet) → create the
 admin account → Account Settings → API Keys → create one for the Homepage

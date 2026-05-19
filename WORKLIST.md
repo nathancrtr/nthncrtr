@@ -980,7 +980,7 @@ prune once satisfied).
 
 ## Phase 8 — Self-hosted Google Photos replacement (Immich)
 
-### 8.1 Immich service scaffolding  [DONE — repo; deploy + Takeout import pending operator]
+### 8.1 Immich service scaffolding + Takeout import  [DONE]
 
 Stand up Immich on natto so the Google Photos image/video archive can be
 pulled local and browsed via a native app — the Photos analogue of the
@@ -1038,4 +1038,32 @@ machine-learning container omitted for now.
 **Rollback:** `cd /srv/immich && docker compose down` (data preserved).
 Full unwind: drop the `photos.nthncrtr.com` Caddy block + redeploy caddy,
 remove the Homepage entry, `docker compose down -v`, `rm -rf /srv/immich`.
-No Cloudflare record to remove (tailnet-only; wildcard covers it).
+Also delete the `photos` A record in the Cloudflare dashboard (there is no
+wildcard — it is a real per-subdomain record that must be removed by hand).
+
+**Outcome (2026-05-19):**
+- Three containers up healthy (`immich_server/redis/postgres`); `/api/server/ping` 200.
+- Cloudflare A record `photos → 100.122.71.33` (DNS only) added; HTTPS 200 on
+  `https://photos.nthncrtr.com` from both natto and workhorse; Caddy DNS-01
+  cert valid. Pi-hole negative cache expired naturally (no restart).
+- Homepage Immich widget live — `HOMEPAGE_VAR_IMMICH_KEY` populated in
+  `/srv/homepage/secrets.env` (0600 on natto); container had already started
+  with the key on the 01:01 UTC redeploy.
+- Google Takeout (full export, no other parts; **48,622,597,926 bytes**, sha256
+  `6d8e493e490814cfaadc9fd0f7cc490314a887a42c30a32e7b5183d8ed3e28a4`)
+  transferred to `/mnt/media/_unsorted/takeout/`. The direct authenticated cURL
+  from natto hit a Google sign-in redirect (cookies rejected server-side for
+  that endpoint), so the file was downloaded on workhorse and shipped to natto.
+  macOS ships **openrsync** (protocol 29) which has no real delta and dropped
+  repeatedly across the 49 GB; switched to a chunked transfer
+  (`dd | ssh cat`) of 24 × 2 GB units with per-chunk size verification, then
+  reassembled and SHA-256-verified byte-perfect on natto.
+- Import via `immich-go v0.31.0` (`upload from-google-photos`, --no-ui, default
+  `--sync-albums --people-tag --takeout-tag`): **10,580 assets read; 6,245
+  uploaded (24.7 GB) + 74 server assets upgraded (350 MB); 0 errors**; 4,220
+  discarded as Takeout-internal duplicates (16.7 GB — Google Photos files
+  appear in both the date folder and every album); 3,708 added to albums;
+  9,298 people-tagged. Immich quota now 27.1 GB; `/` 100 GB free.
+- 49 GB Takeout zip retained at `/mnt/media/_unsorted/takeout/` as cold backup
+  (the file the Asset Tracking Report was generated from; `/mnt/media` has
+  1.8 TB free — no pressure to delete). Operator may remove at will.

@@ -76,7 +76,7 @@ SCRIPT_GROUP=nthncrtr
 SERVICES_HALT=(
   qbittorrent
   jellyfin
-  navidrome
+  navidrome-navidrome-1
   sonarr
   radarr
   prowlarr

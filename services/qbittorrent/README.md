@@ -110,7 +110,7 @@ natto is a shared household hub (Pi-hole DNS, Jellyfin, Nextcloud, Navidrome), *
 |---|---|---|
 | Queueing | **off** | Every completed torrent seeds 24/7. (Trade-off: bulk-adds all start at once — fine for the add-a-few / seed-restore workflow.) |
 | Download / upload limit (off-peak) | **30 / 30 MiB/s** | Full speed 20:00–08:00. Bounded so it never fully saturates natto's link. |
-| Alternative limits (scheduled) | **15 down / 8 MiB/s up** | Active **08:00–20:00 daily** — seeds hard but leaves headroom for Jellyfin/Nextcloud/DNS during waking hours. |
+| Alternative limits (scheduled) | **15 down / 30 MiB/s up** | Active **08:00–20:00 daily**. Daytime *download* cap (15 MiB/s) leaves headroom for Jellyfin/Nextcloud/DNS during waking hours. Daytime *upload* cap matches off-peak (30 MiB/s) because the binding upload constraint is /mnt/media's USB-HDD random-read rate (~6 MB/s, measured 2026-05-20) — qBit can't exceed it regardless, so a smaller daytime upload cap just costs ratio. Revisit after NVMe upgrade. |
 | Max connections (global / per-torrent) | **2000 / 200** | High-volume seeding. |
 | Max upload slots (global / per-torrent) | **100 / 8** | Defaults (20/4) starve a many-torrent seedbox. |
 | Temp path (in-progress dir) | **`/incomplete`** (bind: `/srv/qbit-incomplete`) | In-progress pieces land on the SATA SSD instead of `/mnt/media` (USB HDD + exfat), which capped aggregate downloads at ~10 MB/s on small random writes regardless of network. Completed files move to `save_path` on `/mnt/media` (cross-fs copy, USB-HDD-bound). Caveat: `/srv` has ~90 GB free, so concurrent in-progress downloads are space-limited until the planned NVMe upgrade. |

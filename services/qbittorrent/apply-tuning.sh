@@ -28,7 +28,12 @@ SHOW=false
 
 # --- Desired seedbox tuning -------------------------------------------------
 # Off-peak (20:00-08:00): full 30 MiB/s up + down.
-# Daytime (08:00-20:00):  alt limits kick in -> 15 down / 8 up, household-safe.
+# Daytime (08:00-20:00):  alt download limit kicks in (15 MiB/s, household-safe).
+# Daytime upload limit matches off-peak (30 MiB/s) because the actual upload
+# ceiling is /mnt/media's USB-HDD random-read rate (~6 MB/s measured 2026-05-20)
+# — qBit can't push past that regardless of the cap, so an "8 MiB/s daytime"
+# cap doesn't gain household-DNS headroom; it just leaves ratio on the floor.
+# Revisit after the NVMe upgrade lifts the disk-read ceiling.
 # Queueing OFF so every completed torrent seeds 24/7.
 #   30 MiB/s = 31457280   15 MiB/s = 15728640   8 MiB/s = 8388608
 # temp_path: in-progress pieces land on /incomplete (bind: /srv/qbit-incomplete,
@@ -44,7 +49,7 @@ read -r -d '' PREFS_JSON <<'JSON' || true
   "up_limit": 31457280,
   "scheduler_enabled": true,
   "alt_dl_limit": 15728640,
-  "alt_up_limit": 8388608,
+  "alt_up_limit": 31457280,
   "schedule_from_hour": 8,
   "schedule_from_min": 0,
   "schedule_to_hour": 20,

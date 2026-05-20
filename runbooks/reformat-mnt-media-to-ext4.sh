@@ -250,15 +250,30 @@ phase_transfer() {
       log "  (dry-run; skipping)"
       continue
     fi
+    # ssh options notes:
+    #  -i pins the key (the dedicated passphrase-less natto→Feral one)
+    #  BatchMode=yes prevents ANY interactive prompt — if key auth fails,
+    #    ssh exits with an error instead of falling through to a password
+    #    prompt (caught 2026-05-20: previous version did fall through and
+    #    a Password: prompt appeared in tmux, into which something got
+    #    typed; that's now treated as compromised)
+    #  StrictHostKeyChecking=yes requires the host key to already be in
+    #    UserKnownHostsFile — we added cottus's keys to nthncrtr's
+    #    known_hosts during setup
+    #  UserKnownHostsFile is given explicitly because sudo -u may not
+    #    propagate HOME, leaving ssh searching /root/.ssh which has
+    #    none of the cottus credentials
+    # Using the full hostname (not the cottus alias) eliminates the
+    # ~/.ssh/config lookup dependency for the same HOME reason.
     sudo -u "$SCRIPT_USER" lftp \
-      -e "set sftp:connect-program 'ssh -a -x -i /home/$SCRIPT_USER/.ssh/id_ed25519_feral'; \
+      -e "set sftp:connect-program 'ssh -a -x -o BatchMode=yes -o StrictHostKeyChecking=yes -o UserKnownHostsFile=/home/$SCRIPT_USER/.ssh/known_hosts -i /home/$SCRIPT_USER/.ssh/id_ed25519_feral'; \
           set net:max-retries 3; \
           set net:reconnect-interval-base 30; \
           set mirror:use-pget-n $LFTP_PGET_N; \
           set mirror:parallel-transfer-count $LFTP_PARALLEL; \
           mirror -c --verbose=1 --no-perms --parallel=$LFTP_PARALLEL '$src' '$dst'; \
           bye" \
-      sftp://${SCRIPT_USER}@${FERAL_ALIAS} 2>&1 \
+      sftp://${SCRIPT_USER}@cottus.feralhosting.com 2>&1 \
       | tee -a "$LOG"
     log "  end:   $(date)"
   done

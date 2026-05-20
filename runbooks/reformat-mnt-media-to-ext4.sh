@@ -273,8 +273,14 @@ phase_transfer() {
           set mirror:parallel-transfer-count $LFTP_PARALLEL; \
           mirror -c --verbose=1 --no-perms --parallel=$LFTP_PARALLEL '$src' '$dst'; \
           bye" \
-      sftp://${SCRIPT_USER}@cottus.feralhosting.com 2>&1 \
+      "sftp://${SCRIPT_USER}:@cottus.feralhosting.com" 2>&1 \
       | tee -a "$LOG"
+      # NOTE the literal ':' between user and host above. lftp parses URLs
+      # like sftp://user:password@host; passing the empty password (':' with
+      # nothing after) suppresses lftp's interactive "Password:" prompt for
+      # its credential cache. ssh handles all actual auth via the key, so
+      # the empty password value is never used for anything. Without the
+      # colon, lftp would prompt — which hangs forever in detached tmux.
     log "  end:   $(date)"
   done
   log ""

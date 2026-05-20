@@ -60,7 +60,10 @@ MOUNTPOINT=/mnt/media
 LABEL=media
 MOUNT_OPTS=defaults,noatime,nodiratime
 FERAL_ALIAS=cottus   # configured in /home/nthncrtr/.ssh/config
-FERAL_ARCHIVE_ROOT='/home/nthncrtr/data-from-nthncrtr@tethys'
+# Feral's nthncrtr home is at /media/zdn/nthncrtr/ (shared-host slot layout,
+# not /home/nthncrtr/) — discovered 2026-05-20 when inventory phase failed
+# with "No such file or directory" on /home/nthncrtr/...
+FERAL_ARCHIVE_ROOT='/media/zdn/nthncrtr/data-from-nthncrtr@tethys'
 LFTP_PARALLEL=4
 LFTP_PGET_N=1
 LOG=/var/log/reformat-mnt-media.log

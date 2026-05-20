@@ -80,6 +80,11 @@ SERVICES_HALT=(
   sonarr
   radarr
   prowlarr
+  # homepage bind-mounts /mnt/media for its free-space widget; Docker
+  # keeps the bind alive while the container runs, which pins sda2 enough
+  # that mkfs.ext4 refuses with "apparently in use" (caught 2026-05-20).
+  # Stopping homepage releases the bind; restart in phase_start.
+  homepage
 )
 # Systemd timers that may write to /mnt/media on a schedule.
 TIMERS_DISABLE=(

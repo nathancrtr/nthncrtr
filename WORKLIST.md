@@ -1209,7 +1209,7 @@ single-operator household; not acceptable in a multi-tenant context.
 - Periodic `restic check --read-data-subset=5%` on the B2 repo — restic's
   own integrity check; can run monthly out-of-band.
 - The `caddy.env` + various `secrets.env` files are still natto-plaintext.
-  Phase 8.3 candidate: `age`-encrypted secrets in the repo (recipient key
+  Phase 8.4 candidate: `age`-encrypted secrets in the repo (recipient key
   on workhorse + paper offline) so secrets ride the existing
   repo-→-GitHub-→-workhorse 3-2-1 path that configs already use.
 - WORKLIST 8.1 said Immich-library backups would land here — that's this
@@ -1220,3 +1220,74 @@ single-operator household; not acceptable in a multi-tenant context.
 the operator has to remove by hand (or just stop paying — B2 deletes
 after the configured lifecycle). No live-service impact at any point —
 this layer is purely additive.
+
+### 8.3 qBittorrent Proton VPN endpoint: Switzerland → Netherlands  [DONE — verification pending 2026-05-20 EU-daytime]
+
+**Trigger:** operator reported torrent downloads from a high-quality EU
+private tracker were ~0.36 MiB/s aggregate (single-digit KiB/s per
+torrent) — three orders of magnitude under the 15 MiB/s alt-schedule cap
+and ~250× under what the same tracker delivered to an EU shared-hosting
+seedbox. natto is on 1 Gbps GFiber, all infrastructure healthy.
+
+**Diagnosis (2026-05-19):** every infra layer green —
+`forwarded_port=51767` synced cleanly to qBit's `listen_port`, port
+externally reachable per portchecker.co (proves inbound), gluetun
+connected, schedule limits not the issue. The signal was in per-torrent
+state: huge swarms (`peers=3/195`, `0/198`, `1/199`) with near-zero
+throughput. Geography was the cap: VPN exit was Switzerland, so US→CH
+adds ~80–100 ms RTT on top of every peer flow, and per-flow BitTorrent
+throughput is BDP-bounded. The CH exit IPs are also widely shared and
+frequently deprioritized by trackers/peers. The previous EU seedbox had
+none of these properties — datacenter peering, dedicated IP, already
+in-EU.
+
+**Change made (live, not in repo):**
+- `/srv/qbittorrent/secrets.env` on natto: `SERVER_COUNTRIES=Switzerland`
+  → `Netherlands`. NL was chosen as a jurisdictional sibling of CH for
+  DMCA-cover purposes (Proton itself is CH-based; CH/NL/IS are the
+  privacy-friendly Proton country options) with materially better
+  trans-Atlantic peering and a heavier P2P-server footprint.
+- `sudo ./deploy.sh qbittorrent` to recreate the gluetun+qBit+port-updater
+  stack on the new endpoint. New exit IP `103.69.224.108`
+  (Amsterdam, NL), new forwarded port `62724`, qBit listen_port resynced,
+  port externally reachable per portchecker.co.
+
+**Repo changes:**
+- `services/qbittorrent/secrets.env.example`: flipped the documented
+  default comment from Switzerland to Netherlands.
+
+**Success criteria:**
+- gluetun exits via NL: `docker exec gluetun env | grep SERVER_COUNTRIES`
+  shows `Netherlands`; external IP geolocates to NL. ✓ verified
+  2026-05-19.
+- Forwarded port matches qBit's `listen_port` and is externally
+  reachable on the new IP. ✓ verified.
+- **(pending)** Aggregate qBit download speed during EU-daytime hours
+  (≈ 10:00 EDT / 16:00 CEST) is materially higher than the CH baseline
+  (≥ 5 MiB/s aggregate against the 30 MiB/s off-peak cap, with healthy
+  100+ connected-peer counts per active torrent). Tested initially at
+  ~02:40 CEST when the swarm was largely asleep — single-MiB/s was
+  inconclusive. **Recheck 2026-05-20.**
+
+**Known follow-ups (not in 8.3):**
+- `deploy.sh qbittorrent` self-heal-on-bind-failure fired its stale-
+  lockfile branch even though the actual cause was gluetun being down
+  (so qBit's WebUI was *never* going to bind). Wasted work + misleading
+  warnings. A future deploy.sh harden: before clearing the lockfile,
+  check `docker inspect gluetun --format '{{.State.Status}}'` and bail
+  with a clearer error if gluetun isn't running.
+- `docker compose up -d` failed twice in a row with `cannot stop
+  container: ... tried to kill container, but did not receive an exit
+  event` — a stuck-kill state on the old qbittorrent. Resolved with
+  manual `docker rm -f` after the SIGKILL eventually took effect. Worth
+  a sibling section in `services/qbittorrent/README.md` § Troubleshooting
+  alongside the existing "stale single-instance lock" item: same failure
+  surface (deploy looks broken), different root cause (runc/dockerd
+  reap-event lost vs lock pair on disk), different fix
+  (`docker rm -f` once SIGKILL completes vs delete two files).
+
+**Rollback:** revert `/srv/qbittorrent/secrets.env` to
+`SERVER_COUNTRIES=Switzerland`, re-revert the example comment in the
+repo, `sudo ./deploy.sh qbittorrent`. Same caveat as any qBit stack
+recreate: in-flight *arr grabs without metadata get orphaned and need
+Wanted→Missing re-trigger (per `services/qbittorrent/README.md`).

@@ -41,7 +41,29 @@ SHOW=false
 # random writes + per-piece fsyncs were capping aggregate downloads at ~10 MB/s
 # regardless of how much VPN/peer throughput was available. On completion qBit
 # moves the file to save_path on /mnt/media (cross-fs copy, USB-HDD-bound at
-# ~10 MB/s, runs in the background and is what Radarr/Sonarr hardlink off).
+# ~10 MB/s, runs in the background — and note that Radarr/Sonarr cannot
+# hardlink off the result either, because /mnt/media is exfat and exfat has
+# no hardlink support; both *arrs silently fall back to copy too).
+#
+# Advanced libtorrent knobs — diagnosed 2026-05-20 as a chronic disk-thrash
+# situation. The defaults assume a fast local SSD; on USB-HDD+exfat they
+# starve the seeder:
+#   disk_cache=512 (MB) — was -1 (auto, ~64 MB). Keeps hot pieces in RAM so
+#     popular seeds don't pound the disk on every leecher request. We have
+#     ~5 GB available RAM after vm.swappiness=10 stops the swap thrash.
+#   enable_piece_extent_affinity — serves piece requests in extent order
+#     instead of arrival order; turns scattered random reads into more
+#     sequential ones. Single biggest HDD-seeder knob in libtorrent.
+#   enable_coalesce_read_write — merges adjacent small I/Os into larger ones.
+#   hashing_threads=4 (was 2) — faster post-restart recheck on our 4-core
+#     host so torrents return to seeding sooner.
+#   checking_memory_use=128 MB (was 32) — bigger recheck buffer, fewer
+#     re-reads when verifying.
+#   reannounce_when_address_changed=true — when Proton rotates the forwarded
+#     port (~every few hours), reannounce immediately so trackers serve
+#     leechers the current port instead of the stale one. Critical for
+#     ratio: a stale tracker entry means leechers fail to connect to us
+#     until the next scheduled announce (could be 30+ min).
 read -r -d '' PREFS_JSON <<'JSON' || true
 {
   "queueing_enabled": false,
@@ -62,7 +84,13 @@ read -r -d '' PREFS_JSON <<'JSON' || true
   "upnp": false,
   "random_port": false,
   "temp_path_enabled": true,
-  "temp_path": "/incomplete"
+  "temp_path": "/incomplete",
+  "disk_cache": 512,
+  "enable_piece_extent_affinity": true,
+  "enable_coalesce_read_write": true,
+  "hashing_threads": 4,
+  "checking_memory_use": 128,
+  "reannounce_when_address_changed": true
 }
 JSON
 # ---------------------------------------------------------------------------

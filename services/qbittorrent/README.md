@@ -114,6 +114,11 @@ natto is a shared household hub (Pi-hole DNS, Jellyfin, Nextcloud, Navidrome), *
 | Max connections (global / per-torrent) | **2000 / 200** | High-volume seeding. |
 | Max upload slots (global / per-torrent) | **100 / 8** | Defaults (20/4) starve a many-torrent seedbox. |
 | Temp path (in-progress dir) | **`/incomplete`** (bind: `/srv/qbit-incomplete`) | In-progress pieces land on the SATA SSD instead of `/mnt/media` (USB HDD + exfat), which capped aggregate downloads at ~10 MB/s on small random writes regardless of network. Completed files move to `save_path` on `/mnt/media` (cross-fs copy, USB-HDD-bound). Caveat: `/srv` has ~90 GB free, so concurrent in-progress downloads are space-limited until the planned NVMe upgrade. |
+| Disk cache | **512 MB** | Default `-1` is ~64 MB. Holds hot pieces in RAM so popular seeds don't re-read from `/mnt/media` (USB HDD, contended) for every leecher request. Safe with the 8 GB host because `vm.swappiness=10` (see `bootstrap/sysctl-natto-tuning.conf`) stops swap thrash. Revisit if RAM is upgraded. |
+| Piece extent affinity | **on** | Serves piece requests in extent order instead of peer-arrival order — turns scattered random reads into more sequential ones. Single biggest HDD-seeder knob in libtorrent. |
+| Coalesce read/write | **on** | Merges adjacent small I/Os into larger ones, cutting per-op overhead on the slow disk. |
+| Hashing threads | **4** | Default 2. Lets a 4-core host finish post-restart rechecks faster, returning torrents to seeding sooner. |
+| Reannounce on address change | **on** | When Proton rotates the forwarded port (every few hours), reannounce immediately so trackers don't serve leechers a stale port until the next scheduled announce. Critical for ratio. |
 
 ```sh
 sudo /srv/qbittorrent/apply-tuning.sh           # re-assert (deploy.sh does this for you)

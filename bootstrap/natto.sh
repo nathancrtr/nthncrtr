@@ -309,6 +309,20 @@ step_srv() {
 # ---------------------------------------------------------------------------
 # Step 6: backup script + daily timer
 # ---------------------------------------------------------------------------
+step_sysctl_tuning() {
+  # Host-level kernel tunables — see bootstrap/sysctl-natto-tuning.conf for
+  # the full rationale (it's diagnosis-driven, not generic best-practice).
+  local src="$REPO_ROOT/bootstrap/sysctl-natto-tuning.conf"
+  local dst=/etc/sysctl.d/90-natto-tuning.conf
+  if [[ -f "$dst" ]] && cmp -s "$src" "$dst"; then
+    skip "$dst"
+  else
+    install -o root -g root -m 0644 "$src" "$dst"
+    sysctl --system >/dev/null
+    log "installed $dst and reloaded sysctl"
+  fi
+}
+
 step_backup() {
   install -o root -g root -m 0755 \
     "$REPO_ROOT/services/backup/backup.sh" \
@@ -418,6 +432,7 @@ main() {
   step_docker
   step_tailscale
   step_deploy_key
+  step_sysctl_tuning
   step_caddy
   step_srv
   step_backup

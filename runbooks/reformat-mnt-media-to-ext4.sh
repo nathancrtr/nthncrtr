@@ -212,7 +212,11 @@ phase_wipe() {
   run "mount $MOUNTPOINT"
   log ""
   log "creating directory layout:"
-  for d in music video/movies video/tv _unsorted/torrents backups; do
+  # `install -d` only sets ownership on the leaf, so for nested paths we
+  # have to create each level explicitly — otherwise the intermediate dirs
+  # (video/, _unsorted/) get the default root:root from sudo (caught
+  # 2026-05-20). Shallow-first ordering.
+  for d in music video video/movies video/tv _unsorted _unsorted/torrents backups; do
     run "install -d -o $SCRIPT_USER -g $SCRIPT_GROUP -m 0755 $MOUNTPOINT/$d"
   done
   log ""

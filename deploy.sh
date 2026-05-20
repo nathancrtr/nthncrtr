@@ -234,6 +234,15 @@ deploy_qbittorrent() {
     install -d -o nthncrtr -g nthncrtr -m 0755 /mnt/media/_unsorted/torrents
     note "created /mnt/media/_unsorted/torrents"
   }
+  # Fast staging area for qBit's in-progress pieces, bind-mounted into the
+  # container at /incomplete. Lives on the root SATA SSD, decoupling small
+  # random torrent writes (which cap exfat-on-USB-HDD at ~10 MB/s) from the
+  # archival /mnt/media. apply-tuning.sh sets temp_path_enabled/temp_path
+  # to match.
+  [[ -d /srv/qbit-incomplete ]] || {
+    install -d -o nthncrtr -g nthncrtr -m 0755 /srv/qbit-incomplete
+    note "created /srv/qbit-incomplete"
+  }
   # Warn if secrets.env is missing — gluetun will start without it but won't
   # establish a tunnel, and qbittorrent (network_mode: service:gluetun) will
   # have no network at all.

@@ -113,6 +113,7 @@ natto is a shared household hub (Pi-hole DNS, Jellyfin, Nextcloud, Navidrome), *
 | Alternative limits (scheduled) | **15 down / 8 MiB/s up** | Active **08:00–20:00 daily** — seeds hard but leaves headroom for Jellyfin/Nextcloud/DNS during waking hours. |
 | Max connections (global / per-torrent) | **2000 / 200** | High-volume seeding. |
 | Max upload slots (global / per-torrent) | **100 / 8** | Defaults (20/4) starve a many-torrent seedbox. |
+| Temp path (in-progress dir) | **`/incomplete`** (bind: `/srv/qbit-incomplete`) | In-progress pieces land on the SATA SSD instead of `/mnt/media` (USB HDD + exfat), which capped aggregate downloads at ~10 MB/s on small random writes regardless of network. Completed files move to `save_path` on `/mnt/media` (cross-fs copy, USB-HDD-bound). Caveat: `/srv` has ~90 GB free, so concurrent in-progress downloads are space-limited until the planned NVMe upgrade. |
 
 ```sh
 sudo /srv/qbittorrent/apply-tuning.sh           # re-assert (deploy.sh does this for you)

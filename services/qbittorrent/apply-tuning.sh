@@ -31,6 +31,12 @@ SHOW=false
 # Daytime (08:00-20:00):  alt limits kick in -> 15 down / 8 up, household-safe.
 # Queueing OFF so every completed torrent seeds 24/7.
 #   30 MiB/s = 31457280   15 MiB/s = 15728640   8 MiB/s = 8388608
+# temp_path: in-progress pieces land on /incomplete (bind: /srv/qbit-incomplete,
+# the SATA SSD) instead of /mnt/media (USB HDD on exfat), where the small
+# random writes + per-piece fsyncs were capping aggregate downloads at ~10 MB/s
+# regardless of how much VPN/peer throughput was available. On completion qBit
+# moves the file to save_path on /mnt/media (cross-fs copy, USB-HDD-bound at
+# ~10 MB/s, runs in the background and is what Radarr/Sonarr hardlink off).
 read -r -d '' PREFS_JSON <<'JSON' || true
 {
   "queueing_enabled": false,
@@ -49,7 +55,9 @@ read -r -d '' PREFS_JSON <<'JSON' || true
   "max_uploads": 100,
   "max_uploads_per_torrent": 8,
   "upnp": false,
-  "random_port": false
+  "random_port": false,
+  "temp_path_enabled": true,
+  "temp_path": "/incomplete"
 }
 JSON
 # ---------------------------------------------------------------------------

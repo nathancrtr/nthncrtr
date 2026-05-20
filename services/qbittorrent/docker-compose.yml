@@ -70,6 +70,18 @@ services:
     volumes:
       - ./config:/config
       - /mnt/media:/mnt/media
+      # Incomplete-downloads staging on the SATA SSD (root fs), separate from
+      # /mnt/media which is a USB-attached spinning HDD on exfat. qBit writes
+      # in-progress pieces here (small random writes + fsyncs, the access
+      # pattern exfat-on-USB-HDD is worst at) and moves the completed file to
+      # /mnt/media on finish. Lifts the disk-write ceiling from ~10 MB/s
+      # (USB HDD limit) to SATA SSD speed (~500 MB/s), letting the Proton WG
+      # tunnel's ~77 MB/s single-flow throughput actually land. The
+      # corresponding qBit pref is temp_path_enabled=true, temp_path=/incomplete
+      # (runtime state in /config/qBittorrent/qBittorrent.conf, not in repo).
+      # /srv has ~90 GB free, so concurrent in-progress downloads are capped
+      # there until the planned NVMe upgrade to the empty M.2 slot.
+      - /srv/qbit-incomplete:/incomplete
     depends_on:
       - gluetun
     restart: unless-stopped

@@ -181,16 +181,34 @@ The expected steady-state result: each torrent's content downloads (from the swa
 
 ## Disaster recovery: rebuilding from scratch via Beyond-HD
 
-Same shape as the Orpheus path above, but for video. Used when the BHD-side `BT_backup/` entries are gone but the on-disk content under `/mnt/media/video/{movies,tv}` is intact (i.e. Radarr/Sonarr hardlinked into the library — originals untouched at qBit's download savepath). In that case re-adding the .torrent makes qBit hash-check, find a complete file, and switch straight to seeding — **no download bandwidth, no ratio cost**. There is no equivalent of `orpheus-plan.py` here for that reason: every entry on the list should be restored.
+Same shape as the Orpheus path above, but for video — with one critical
+difference. The operator's BHD "completed" list is the *history* of
+everything ever snatched, the bulk of which has been watched and deleted
+on purpose. The actual `/mnt/media/video/{movies,tv}` library is a small
+strict subset. So the recovery operation must be **match-and-keep** —
+never **didn't-match-and-resume**. Adding all 300+ torrents the naive
+way would queue every non-matching entry for download, burning bandwidth
++ ratio + disk space to re-acquire content the operator deliberately
+threw away.
+
+The safe pattern, baked into the procedure below: **add paused →
+let qBit hash-check → keep only the 100%-match torrents, delete the
+rest from qBit (files on disk never touched).** Hash-check is the truth
+oracle; everything below 100% gets dropped. The category tag is the
+safety boundary — the culler refuses to run without one and only acts
+on torrents in that category, so it cannot touch music seeds or
+*arr-managed downloads.
 
 1. **`bhd-restore.py`** — Python 3, stdlib only. Reads `BHD_API_TOKEN` (URL path) and `BHD_RSS_KEY` (POST body, required for the API to return usable per-torrent `download_url` values) from `/srv/qbittorrent/secrets.env`. Enumerates the operator's `completed` / `seeding` / `leeching` torrent lists via BHD's `/api/torrents/<token>` endpoint with the matching filter flag. Per-torrent: classifies by BHD `category` (`Movies` → `movies/`, `TV` → `tv/`, anything else → `other/`), then downloads the `.torrent` from the API-provided `download_url` as `<bucket>/<torrentId>.torrent`. Idempotent: re-running skips files already on disk. Includes a `--probe` mode that posts once against page 1 and dumps the raw response — useful for sanity-checking pagination and field names against the first real run.
 
-2. **`qbit-bulk-add.sh`** — same script the Orpheus path uses, just run twice with the right `--savepath` per bucket.
+2. **`qbit-bulk-add.sh --paused`** — same script the Orpheus path uses, just called with `--paused` so qBit hash-checks but never starts a peer connection / download until we explicitly resume. Run once per bucket (movies, tv) with the matching savepath/category.
+
+3. **`qbit-keep-only-complete.sh`** — runs a one-shot `python:3-alpine` container inside gluetun's netns. Polls `torrents/info?category=<CAT>` until all in-scope torrents have left the `checking*` state, then for each: `progress >= 1.0` → resume; `progress < 1.0` → delete from qBit with `deleteFiles=false`. Default is dry-run; `--yes` is required to act. Aborts if any in-scope torrent is in an active download state (a signal that `--paused` was missed). Refuses to run without `--category` — that's the safety boundary.
 
 ### Procedure
 
 ```sh
-ssh natto
+ssh -t natto
 
 # 1. One-time: add BHD_API_TOKEN and BHD_RSS_KEY to secrets.env. Both come
 #    from beyond-hd.me → Settings → Security (separate fields).
@@ -200,27 +218,54 @@ sudoedit /srv/qbittorrent/secrets.env
 cd /srv/qbittorrent
 sudo ./bhd-restore.py --probe --type completed
 
-# 3. Pull fresh .torrent files. `completed` is the canonical list; `seeding`
-#    is normally a subset (useful as a cross-check or if you only want to
-#    restore currently-seeding entries first).
+# 3. Pull fresh .torrent files into restore-bhd/{movies,tv,other}/.
 sudo ./bhd-restore.py --out ./restore-bhd --type completed
-sudo ./bhd-restore.py --out ./restore-bhd --type seeding   # usually delta-only
 
-# 4. Prove the qBit add flow on ONE movie before fanning out. If it hits 0%
-#    with "Missing files" instead of hash-checking to seeding, the on-disk
-#    layout doesn't match what the .torrent expects — stop and investigate
-#    (likely savepath drift between when the torrent was downloaded and now).
+# 4. ADD PAUSED — one bucket at a time. qBit hash-checks each torrent but
+#    starts NO downloads because everything is paused on add.
 sudo ./qbit-bulk-add.sh --dir ./restore-bhd/movies \
-  --savepath /mnt/media/video/movies --category bhd-movies --limit 1
-
-# 5. Once the probe is seeding, fan out per bucket.
-sudo ./qbit-bulk-add.sh --dir ./restore-bhd/movies \
-  --savepath /mnt/media/video/movies --category bhd-movies
+  --savepath /mnt/media/video/movies --category bhd-movies --paused
 sudo ./qbit-bulk-add.sh --dir ./restore-bhd/tv \
-  --savepath /mnt/media/video/tv     --category bhd-tv
+  --savepath /mnt/media/video/tv     --category bhd-tv     --paused
+
+# 5. DRY-RUN the keep/delete decision. Reports the keep/delete buckets by
+#    name, takes no action. Inspect: does the keep count match what you
+#    actually still have on disk? Are the "delete" entries actually the
+#    content you watched and threw away?
+sudo ./qbit-keep-only-complete.sh --category bhd-movies
+sudo ./qbit-keep-only-complete.sh --category bhd-tv
+
+# 6. ACT. Keeps the 100%-match torrents (resumes them → seeding); drops
+#    everything below 100% from qBit. Files on disk are NEVER touched
+#    (deleteFiles=false on every delete call).
+sudo ./qbit-keep-only-complete.sh --category bhd-movies --yes
+sudo ./qbit-keep-only-complete.sh --category bhd-tv     --yes
 ```
 
-`--dry-run` on `bhd-restore.py` builds the manifest without fetching any .torrent files. `restore-bhd/other/` collects any torrent whose BHD category isn't `Movies` or `TV` — those aren't auto-added (their savepath is ambiguous); inspect and add manually if needed.
+`--dry-run` on `bhd-restore.py` builds the manifest without fetching any
+.torrent files. `restore-bhd/other/` collects any torrent whose BHD
+category isn't `Movies` or `TV` — those aren't auto-added (their
+savepath is ambiguous); inspect and add manually if needed.
+
+### Why "add paused" is safe even if we never run the culler
+
+A paused torrent in qBit stays paused across restarts (the state is
+persisted to `BT_backup/`). If steps 5/6 are skipped, the worst outcome
+is N stopped torrents cluttering the qBit UI — no bandwidth, no
+download, no ratio impact. The operator can remove them manually from
+the UI at any time; `deleteFiles=false` is the default in qBit's UI
+delete dialog too.
+
+### When `qbit-keep-only-complete.sh` aborts on "active state"
+
+The culler refuses to act if any in-scope torrent is in a downloading
+or uploading state — that almost always means `--paused` was missed on
+the bulk-add (so torrents are already pulling pieces from the swarm).
+**Don't pass `--allow-active` reflexively.** Stop the offending
+torrents first (qBit UI: select all in category → Stop), confirm
+they're all in `stoppedDL` / `stoppedUP`, then re-run the culler.
+`--allow-active` is only correct if you genuinely want to delete
+in-flight downloads.
 
 ## Homepage widget
 

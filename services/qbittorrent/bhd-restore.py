@@ -140,8 +140,8 @@ def classify(category: str) -> str:
 
 def enumerate_torrents(api_token: str, rss_key: str, kind: str) -> list[dict]:
     """Walk paginated results until we run out. BHD returns `results` plus
-    pagination metadata (`current_page`, `last_page`, `total_results`); we
-    rely on `last_page` when present and otherwise stop on an empty page."""
+    `page`, `total_pages`, and `total_results`; we stop on the documented
+    last page (and defensively also on an empty results array)."""
     items: list[dict] = []
     page = 1
     filter_key = TYPE_TO_FILTER[kind]
@@ -153,7 +153,7 @@ def enumerate_torrents(api_token: str, rss_key: str, kind: str) -> list[dict]:
             "page": page,
         }
         resp = api_post(api_token, body)
-        if resp.get("status_code") not in (1, 200, None) and resp.get("status") not in (True, "success", None):
+        if resp.get("success") is False:
             raise RuntimeError(f"BHD API error: {resp}")
         results = resp.get("results") or []
         if not results:
@@ -173,18 +173,18 @@ def enumerate_torrents(api_token: str, rss_key: str, kind: str) -> list[dict]:
                     "kind":         kind,
                 }
             )
-        last_page = resp.get("last_page")
-        current_page = resp.get("current_page", page)
+        total_pages = resp.get("total_pages")
+        current_page = resp.get("page", page)
         total_results = resp.get("total_results")
         print(
             f"[bhd] page={current_page}"
-            + (f"/{last_page}" if last_page else "")
+            + (f"/{total_pages}" if total_pages else "")
             + f" got {len(results)} items (cumulative={len(items)}"
             + (f"/{total_results}" if total_results else "")
             + ")",
             flush=True,
         )
-        if last_page is not None and current_page >= last_page:
+        if total_pages is not None and current_page >= total_pages:
             break
         page = (current_page or page) + 1
         time.sleep(RATE_LIMIT_SLEEP)

@@ -179,6 +179,49 @@ sudo ./qbit-bulk-add.sh --dir ./restore
 
 The expected steady-state result: each torrent's content downloads (from the swarm + tracker), then qBit transitions to seeding, and the tracker's "snatched/seeding" lists for the user reflect reality again. Once `BT_backup/` is repopulated this way, daily `backup.sh` runs will capture it (via `/srv/` in the SOURCES list) so this whole procedure becomes a one-time fix.
 
+## Disaster recovery: rebuilding from scratch via Beyond-HD
+
+Same shape as the Orpheus path above, but for video. Used when the BHD-side `BT_backup/` entries are gone but the on-disk content under `/mnt/media/video/{movies,tv}` is intact (i.e. Radarr/Sonarr hardlinked into the library — originals untouched at qBit's download savepath). In that case re-adding the .torrent makes qBit hash-check, find a complete file, and switch straight to seeding — **no download bandwidth, no ratio cost**. There is no equivalent of `orpheus-plan.py` here for that reason: every entry on the list should be restored.
+
+1. **`bhd-restore.py`** — Python 3, stdlib only. Reads `BHD_API_TOKEN` (URL path) and `BHD_RSS_KEY` (POST body, required for the API to return usable per-torrent `download_url` values) from `/srv/qbittorrent/secrets.env`. Enumerates the operator's `completed` / `seeding` / `leeching` torrent lists via BHD's `/api/torrents/<token>` endpoint with the matching filter flag. Per-torrent: classifies by BHD `category` (`Movies` → `movies/`, `TV` → `tv/`, anything else → `other/`), then downloads the `.torrent` from the API-provided `download_url` as `<bucket>/<torrentId>.torrent`. Idempotent: re-running skips files already on disk. Includes a `--probe` mode that posts once against page 1 and dumps the raw response — useful for sanity-checking pagination and field names against the first real run.
+
+2. **`qbit-bulk-add.sh`** — same script the Orpheus path uses, just run twice with the right `--savepath` per bucket.
+
+### Procedure
+
+```sh
+ssh natto
+
+# 1. One-time: add BHD_API_TOKEN and BHD_RSS_KEY to secrets.env. Both come
+#    from beyond-hd.me → Settings → Security (separate fields).
+sudoedit /srv/qbittorrent/secrets.env
+
+# 2. Sanity-check the API + creds with one POST before any pagination.
+cd /srv/qbittorrent
+sudo ./bhd-restore.py --probe --type completed
+
+# 3. Pull fresh .torrent files. `completed` is the canonical list; `seeding`
+#    is normally a subset (useful as a cross-check or if you only want to
+#    restore currently-seeding entries first).
+sudo ./bhd-restore.py --out ./restore-bhd --type completed
+sudo ./bhd-restore.py --out ./restore-bhd --type seeding   # usually delta-only
+
+# 4. Prove the qBit add flow on ONE movie before fanning out. If it hits 0%
+#    with "Missing files" instead of hash-checking to seeding, the on-disk
+#    layout doesn't match what the .torrent expects — stop and investigate
+#    (likely savepath drift between when the torrent was downloaded and now).
+sudo ./qbit-bulk-add.sh --dir ./restore-bhd/movies \
+  --savepath /mnt/media/video/movies --category bhd-movies --limit 1
+
+# 5. Once the probe is seeding, fan out per bucket.
+sudo ./qbit-bulk-add.sh --dir ./restore-bhd/movies \
+  --savepath /mnt/media/video/movies --category bhd-movies
+sudo ./qbit-bulk-add.sh --dir ./restore-bhd/tv \
+  --savepath /mnt/media/video/tv     --category bhd-tv
+```
+
+`--dry-run` on `bhd-restore.py` builds the manifest without fetching any .torrent files. `restore-bhd/other/` collects any torrent whose BHD category isn't `Movies` or `TV` — those aren't auto-added (their savepath is ambiguous); inspect and add manually if needed.
+
 ## Homepage widget
 
 The qBittorrent widget in `services/homepage/config/services.yaml` reaches qBit at **`http://gluetun:8080`** over the shared `qbittorrent_default` docker network — *not* `host.docker.internal` and *not* a host port. Since the Authelia cutover, 8080 is published on `127.0.0.1` only (safety rule 9), so the host-gateway path the widget used to take is dead. qBit shares gluetun's netns, so the reachable container name on that net is `gluetun`. gluetun blocks all inbound by default, so this also requires `FIREWALL_INPUT_PORTS=8080` in the gluetun service (see the compose comment). Add `HOMEPAGE_VAR_QBITTORRENT_PASSWORD=<password>` to `/srv/homepage/secrets.env` (mode 0600) and run `sudo ./deploy.sh homepage` to pick up the secret. Full rationale: `services/homepage/README.md` § "How widgets reach their backends".

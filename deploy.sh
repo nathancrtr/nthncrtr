@@ -214,6 +214,7 @@ deploy_qbittorrent() {
   install_file "$REPO_ROOT/services/qbittorrent/port-updater.sh"    /srv/qbittorrent/port-updater.sh 0755
   install_file "$REPO_ROOT/services/qbittorrent/orpheus-restore.py"  /srv/qbittorrent/orpheus-restore.py 0755
   install_file "$REPO_ROOT/services/qbittorrent/orpheus-plan.py"     /srv/qbittorrent/orpheus-plan.py 0755
+  install_file "$REPO_ROOT/services/qbittorrent/bhd-restore.py"      /srv/qbittorrent/bhd-restore.py 0755
   install_file "$REPO_ROOT/services/qbittorrent/qbit-bulk-add.sh"    /srv/qbittorrent/qbit-bulk-add.sh 0755
   install_file "$REPO_ROOT/services/qbittorrent/apply-tuning.sh"     /srv/qbittorrent/apply-tuning.sh 0755
   (( DRY_RUN )) && return 0

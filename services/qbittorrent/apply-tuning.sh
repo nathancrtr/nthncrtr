@@ -108,6 +108,48 @@ SHOW=false
 #     across the swarm. Round-Robin (0) would be similarly fine; Anti-Leech
 #     also actively penalizes leech-only clients which is a small bonus on
 #     private trackers.
+#
+# Private-tracker leak defense + per-peer throughput — 2026-05-23 evening
+# audit. Two clusters of knobs. Defense first:
+#   dht=false / pex=false / lsd=false — was all true. Every torrent on this
+#     box comes from Orpheus or BHD (both private), and libtorrent already
+#     honors per-torrent `private` flag to suppress these. But: a single
+#     accidentally-added public torrent (drag-and-drop, paste a wrong URL)
+#     would happily enable DHT/PEX/LSD with these globally on. Off globally
+#     removes that footgun; we lose nothing because no torrent here uses
+#     them. Bonus: kills the steady ~33% idle CPU from DHT chatter (367
+#     nodes routinely tracked).
+# Throughput buffers — the libtorrent defaults are sized for an early-2000s
+# DSL seedbox. We have a 31 MB/s single-flow VPN tunnel and a 30 MiB/s
+# qBit upload cap, neither of which we ever come close to using. When a
+# fast leecher does appear, undersized send/socket buffers cap the
+# per-connection throughput well below the cap.
+#   send_buffer_watermark=4000 (was 500 KB), send_buffer_low_watermark=200
+#     (was 10 KB), send_buffer_watermark_factor=200 (was 50) — libtorrent
+#     queues piece data ahead of the kernel write; with the defaults a
+#     single connection's outflight is capped at ~500 KB. Bumping the
+#     watermark + factor lets each connection have ~4 MB outflight, which
+#     a fast leecher can actually consume.
+#   socket_send_buffer_size=1048576 / socket_receive_buffer_size=1048576
+#     (was 0=OS default ~200 KB) — sets SO_SNDBUF/SO_RCVBUF explicitly so
+#     the TCP window can scale for the VPN's added RTT. Won't override the
+#     kernel's tcp_wmem ceiling, but lifts the floor.
+#   max_uploads_per_torrent=16 (was 8) — when two leechers land on the
+#     same big movie, each gets a healthier slice. Bounded by max_uploads=100
+#     globally, so this can't blow out the cap.
+#   file_pool_size=256 (was 100) — qBit holds open file handles for
+#     recently-accessed pieces; with 800+ torrents the LRU was thrashing
+#     (peer asks for piece in already-closed file → reopen). 256 covers
+#     normal working set.
+#   disk_cache=1024 MB (was 512) — natto has 7 GB RAM and uses ~250 MB,
+#     so the extra 512 MB is free. Helps the case where multiple peers
+#     request the same hot piece — second read is from RAM, not the HDD.
+#   save_resume_data_interval=600s (was 60) — every 60s qBit fsync'd resume
+#     data for all 870+ torrents to /config/qBittorrent/BT_backup/, which
+#     during the recheck batch was a non-trivial disk-write penalty.
+#     Worst-case loss on unclean crash: ~10 min of newly-grabbed pieces'
+#     bookkeeping, all recoverable on next recheck (the actual file data
+#     was already fsync'd by libtorrent piece-write paths).
 read -r -d '' PREFS_JSON <<'JSON' || true
 {
   "queueing_enabled": true,
@@ -134,17 +176,27 @@ read -r -d '' PREFS_JSON <<'JSON' || true
   "max_connec": 2000,
   "max_connec_per_torrent": 200,
   "max_uploads": 100,
-  "max_uploads_per_torrent": 8,
+  "max_uploads_per_torrent": 16,
   "upnp": false,
   "random_port": false,
   "temp_path_enabled": true,
   "temp_path": "/incomplete",
-  "disk_cache": 512,
+  "disk_cache": 1024,
   "enable_piece_extent_affinity": true,
   "enable_coalesce_read_write": true,
   "hashing_threads": 4,
   "checking_memory_use": 128,
-  "reannounce_when_address_changed": true
+  "reannounce_when_address_changed": true,
+  "dht": false,
+  "pex": false,
+  "lsd": false,
+  "send_buffer_watermark": 4000,
+  "send_buffer_low_watermark": 200,
+  "send_buffer_watermark_factor": 200,
+  "socket_send_buffer_size": 1048576,
+  "socket_receive_buffer_size": 1048576,
+  "file_pool_size": 256,
+  "save_resume_data_interval": 600
 }
 JSON
 # ---------------------------------------------------------------------------

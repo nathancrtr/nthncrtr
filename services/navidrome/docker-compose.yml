@@ -6,7 +6,28 @@ services:
       - "4533:4533"
     restart: unless-stopped
     environment:
-      ND_SCANSCHEDULE: "1h"
+      # Scanner tuning — set 2026-05-23 after diagnosing Navidrome's auto-scan
+      # as the dominant source of /mnt/media (USB HDD) thrash during qBit
+      # mass-restore downloads. Each completed music torrent fired an inotify-
+      # driven scan that fanned out as 3+ parallel scanner subprocesses
+      # against the USB HDD's ~6 MB/s random-read ceiling, causing the
+      # ~5 MB/s ↔ 40 KB/s torrent-throughput oscillation. See iotop evidence
+      # in WORKLIST / project memory. Don't undo these without restoring the
+      # qBit-side observation that lifted the floor 4x.
+      #   Watcher OFF — was on by default. The inotify watcher is what
+      #     triggered a scan on every torrent-completion file arrival. With
+      #     watcher off, new music only appears in the library on the next
+      #     scheduled scan.
+      #   Schedule @daily — was "1h" (24x/day). Once per night is plenty for
+      #     a household library that grows by ones-of-albums per week. Hit
+      #     the "Reload" button in the Navidrome UI for an immediate scan.
+      #   MaxProcs=1 — was unset (defaults to GOMAXPROCS, = 4 on natto). A
+      #     single sequential scanner is faster than four parallel ones on
+      #     a USB HDD: the HDD's bottleneck is seek time, and four parallel
+      #     readers serialize on the head anyway while burning extra CPU.
+      ND_SCANNER_WATCHER: "false"
+      ND_SCANSCHEDULE: "@daily"
+      ND_SCANNER_MAXPROCS: "1"
       ND_LOGLEVEL: "info"
       ND_SESSIONTIMEOUT: "24h"
       ND_BASEURL: ""

@@ -15,7 +15,8 @@ Caddyfile or the router.
 | Compose | `/srv/jellyfin/docker-compose.yml` |
 | Server config + library DB + metadata | `/srv/jellyfin/config/` |
 | Transcode + image cache | `/srv/jellyfin/cache/` |
-| Media (read-only) | `/mnt/media/video/` → `/media/video` in-container |
+| Video (read-only) | `/mnt/media/video/` → `/media/video` in-container |
+| Music (read-only) | `/mnt/media/music/` → `/media/music` in-container (also served by Navidrome — see *Music* below) |
 | Container | `jellyfin` |
 | Image | `lscr.io/linuxserver/jellyfin:latest` |
 | Networking | `network_mode: host` — binds `8096` (+ `8920`, `1900/udp`, `7359/udp`) directly on natto. Not bridge/published; see compose header (DNS-rebinding guard / stable `127.0.0.1` proxy) |
@@ -196,10 +197,29 @@ Browse to `http://natto:8096`, complete the wizard, then add libraries:
 |---|---|---|
 | Movies | Movies | `/media/video/movies` |
 | Shows  | Shows  | `/media/video/tv` |
+| Music  | Music  | `/media/music` |
 
-These map to `/mnt/media/video/{movies,tv}` on natto (already populated).
-The bind is read-only, so Jellyfin will not write back into the media tree
-(metadata/NFOs land in `/srv/jellyfin/config` instead — fine for this setup).
+These map to `/mnt/media/video/{movies,tv}` and `/mnt/media/music` on natto
+(already populated). All binds are read-only, so Jellyfin will not write back
+into the media tree (metadata/NFOs land in `/srv/jellyfin/config` instead —
+fine for this setup).
+
+### Music: two servers on one library, on purpose
+
+Navidrome (at `music.nthncrtr.com`, tailnet-only) is the canonical music
+server — it's Subsonic-protocol, handles Last.fm scrobbling
+(`services/navidrome/README.md`), and is what desktop/phone Subsonic clients
+talk to. Jellyfin's music library exists specifically to reach the **LG webOS
+TV app** (and other Jellyfin-native TV/console clients) where no good
+Subsonic client exists. The two scan and tag independently, and "now playing"
+state lives in whichever one you used — that's expected, not a bug. Both
+point at `/mnt/media/music` read-only, so neither can corrupt the other's
+view of the files.
+
+This also means **music is now reachable via the public
+`play.nthncrtr.com`** (the Jellyfin tunnel doesn't distinguish libraries) —
+not just tailnet, the way Navidrome is. The per-user-account + WAF
+rate-limit posture (above) covers it the same way it covers video.
 
 ## Operating
 

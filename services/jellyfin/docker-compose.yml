@@ -25,7 +25,11 @@
 # media itself stays on the exfat 5TB, mounted read-only):
 #   /srv/jellyfin/config  → server config + library DB + metadata
 #   /srv/jellyfin/cache   → transcode + image cache
-#   /mnt/media/video      → the library (movies/ + tv/), bind-mounted :ro
+#   /mnt/media/video      → the video library (movies/ + tv/), bind-mounted :ro
+#   /mnt/media/music      → the music library (also served by Navidrome —
+#                           Jellyfin is here for the webOS/TV app ecosystem;
+#                           Navidrome stays canonical for Subsonic clients +
+#                           Last.fm scrobbling), bind-mounted :ro
 # config/cache are NOT on the exfat 5TB: Jellyfin's SQLite library DB needs
 # POSIX locking/atomic renames exfat can't give (same reasoning as Nextcloud,
 # see services/nextcloud/README.md).
@@ -75,6 +79,7 @@ services:
       - ./config:/config
       - ./cache:/cache
       - /mnt/media/video:/media/video:ro
+      - /mnt/media/music:/media/music:ro
     devices:
       - /dev/dri:/dev/dri
     group_add:

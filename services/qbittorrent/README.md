@@ -108,7 +108,7 @@ natto is a shared household hub (Pi-hole DNS, Jellyfin, Nextcloud, Navidrome), *
 
 | Setting | Value | Rationale |
 |---|---|---|
-| Queueing | **off** | Every completed torrent seeds 24/7. (Trade-off: bulk-adds all start at once — fine for the add-a-few / seed-restore workflow.) |
+| Queueing | **on** (10 active downloads, 1000 active uploads, slow torrents don't count) | Was off through 2026-05-22 on the theory that "every completed torrent seeds 24/7" needs no queueing. After the Orpheus + BHD mass-restores (800+ torrents, hundreds simultaneously in `downloading`/`stalledDL`) that broke down: with private trackers (no DHT/PEX) and old/dead Orpheus swarms, the 2000 global connection cap divided ~3-4 peers per torrent and aggregate throughput collapsed to <1 MB/s against a 30 MiB/s ceiling. Queueing 10 downloads at a time gives each a healthy peer count; `dont_count_slow_torrents=true` (>60s under 2 KB/s) parks dead-swarm torrents so they don't squat in the 10 slots. `max_active_uploads=1000` preserves the "everything seeds" property — only *downloads* are queued. |
 | Download / upload limit (off-peak) | **30 / 30 MiB/s** | Full speed 20:00–08:00. Bounded so it never fully saturates natto's link. |
 | Alternative limits (scheduled) | **15 down / 30 MiB/s up** | Active **08:00–20:00 daily**. Daytime *download* cap (15 MiB/s) leaves headroom for Jellyfin/Nextcloud/DNS during waking hours. Daytime *upload* cap matches off-peak (30 MiB/s) because the binding upload constraint is /mnt/media's USB-HDD random-read rate (~6 MB/s, measured 2026-05-20) — qBit can't exceed it regardless, so a smaller daytime upload cap just costs ratio. Revisit after NVMe upgrade. |
 | Max connections (global / per-torrent) | **2000 / 200** | High-volume seeding. |

@@ -34,7 +34,18 @@ SHOW=false
 # — qBit can't push past that regardless of the cap, so an "8 MiB/s daytime"
 # cap doesn't gain household-DNS headroom; it just leaves ratio on the floor.
 # Revisit after the NVMe upgrade lifts the disk-read ceiling.
-# Queueing OFF so every completed torrent seeds 24/7.
+#
+# Queueing ON (changed 2026-05-22). Was off, on the theory that "every completed
+# torrent seeds 24/7" needs no queueing. True in steady state — but after the
+# Orpheus + BHD mass-restores the library now has 800+ torrents, with hundreds
+# in `downloading` / `stalledDL` simultaneously. With private trackers (no
+# DHT/PEX) and old/dead Orpheus swarms, those hundreds of in-flight downloads
+# split the 2000-conn global cap into ~3-4 peers each and sum to <1 MB/s
+# aggregate. The fix is to *queue* downloads: max_active_downloads=10 plus
+# dont_count_slow_torrents=true so a stalled dead-swarm torrent doesn't squat
+# in one of those 10 slots — it parks itself after 60s below 2 KB/s, freeing
+# the slot for a healthy one. max_active_uploads=1000 keeps all seeders active
+# (the previous "queueing off → all seed forever" guarantee is preserved).
 #   30 MiB/s = 31457280   15 MiB/s = 15728640   8 MiB/s = 8388608
 # temp_path: in-progress pieces land on /incomplete (bind: /srv/qbit-incomplete,
 # the SATA SSD) instead of /mnt/media (USB HDD on exfat), where the small
@@ -66,7 +77,14 @@ SHOW=false
 #     until the next scheduled announce (could be 30+ min).
 read -r -d '' PREFS_JSON <<'JSON' || true
 {
-  "queueing_enabled": false,
+  "queueing_enabled": true,
+  "max_active_downloads": 10,
+  "max_active_uploads": 1000,
+  "max_active_torrents": 1010,
+  "dont_count_slow_torrents": true,
+  "slow_torrent_dl_rate_threshold": 2048,
+  "slow_torrent_ul_rate_threshold": 2048,
+  "slow_torrent_inactive_timer": 60,
   "dl_limit": 31457280,
   "up_limit": 31457280,
   "scheduler_enabled": true,

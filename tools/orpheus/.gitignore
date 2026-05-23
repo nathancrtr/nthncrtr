@@ -1,0 +1,6 @@
+.venv/
+secrets.env
+*.csv
+*.html
+upload/state/
+upload/torrents/

@@ -7,6 +7,10 @@ Decision record for how the 5TB drive is organized. Lives at `/mnt/media` on nat
 ```
 /mnt/media/
 ├── music/        — audio, scanned by Navidrome (bind: /mnt/media/music:/music:ro)
+├── seed-only/    — MP3 transcodes of OPS uploads (320/V0). qBit seeds these
+                    but Navidrome doesn't see them, so the same album in three
+                    formats doesn't triple in the library. See
+                    tools/orpheus/upload/README.md for the upload pipeline.
 ├── video/        — placeholder for future Jellyfin / video content
 ├── backups/      — natto-YYYY-MM-DD.tgz, written by services/backup
 └── _unsorted/    — junk that landed on the drive over time (installer
@@ -26,8 +30,8 @@ Subdirectories of `_unsorted/`:
 
 ## Mount details
 
-- Filesystem: exfat (`/dev/sda2`), mounted with `uid=1000,gid=1000,fmask=0022,dmask=0022,iocharset=utf8,errors=remount-ro` per `/etc/fstab`.
-- Owner of every file/dir: `nthncrtr:nthncrtr`.
+- Filesystem: **ext4** (`/dev/sda2`), mounted with default options (`rw,noatime,nodiratime`) per `/etc/fstab`. The drive was reformatted ext4 during the 2026-05-16 natto migration — the original Pi-era setup was exfat with `uid=1000,gid=1000` mount options, but ext4 + per-dir chown is now the model.
+- The mount root `/mnt/media` itself is owned `root:root`. Each top-level service subdir (`music/`, `seed-only/`, `video/`, `backups/`, `_unsorted/`) is `chown`ed to `nthncrtr:nthncrtr` at creation, so day-to-day operations (rsync from workhorse, qBit writes, etc.) don't need root. **Adding a new top-level subdir requires sudo**: `sudo mkdir -p /mnt/media/<new> && sudo chown nthncrtr:nthncrtr /mnt/media/<new>` (use the clipboard-paste sudo pattern from CLAUDE.md).
 - Read-only for Navidrome (and any future Jellyfin) bind mounts: append `:ro`.
 
 ## Migration from previous state (2026-05-09)

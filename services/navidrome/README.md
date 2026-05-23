@@ -129,6 +129,32 @@ curl -s -o /dev/null -w '%{http_code}\n' -X POST \
   -d '{"username":"USER","password":"NEWPASS"}'   # expect 200
 ```
 
+## Last.fm scrobbling
+
+Navidrome scrobbles to Last.fm natively. Two pieces:
+
+1. **Server-side app credentials** (`ND_LASTFM_APIKEY` + `ND_LASTFM_SECRET`
+   in `/srv/navidrome/secrets.env`). Obtained once by registering an app at
+   <https://www.last.fm/api/account/create>; shared across all Navidrome
+   users on this server. `ND_LASTFM_ENABLED` defaults to true so just
+   populating the two vars + restarting is enough to expose the "Link"
+   button in the UI.
+2. **Per-user link** in Navidrome's profile UI: avatar → Settings → Last.fm
+   → "Link". OAuth-authorizes that Navidrome user against a last.fm
+   account; the binding lives in `navidrome.db`. Each operator-side user
+   links separately.
+
+Restart after populating the secrets:
+
+```sh
+cd /srv/navidrome && docker compose restart
+```
+
+If the "Link" button is missing after restart, check the container env
+actually picked the vars up: `docker exec navidrome-navidrome-1 env | grep
+ND_LASTFM`. Empty values mean `secrets.env` isn't being read (wrong path,
+wrong mode, or compose was never restarted).
+
 ## Backup
 
 The scan db (`/srv/navidrome/data/`) goes into the daily tarball. The music library itself does NOT — it's its own thing on the 5TB drive, too large to redundantly tar. The `_pwreset_bak_*` snapshot dirs from the recovery procedure are not pruned automatically — delete them once login is confirmed (they contain old credentials).

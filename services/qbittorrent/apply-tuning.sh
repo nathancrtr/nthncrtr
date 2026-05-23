@@ -84,6 +84,30 @@ SHOW=false
 #     leechers the current port instead of the stale one. Critical for
 #     ratio: a stale tracker entry means leechers fail to connect to us
 #     until the next scheduled announce (could be 30+ min).
+#
+# VPN-over-the-wire knobs — diagnosed 2026-05-23 against persistent low,
+# high-variance per-peer throughput (top sender ~44 KB/s) despite a healthy
+# tunnel (single-flow 31 MB/s to Hetzner DE; 4-flow aggregate 80 MB/s) and
+# port-forwarding being open (external nc to the Proton-forwarded port
+# succeeded). Confirmed root cause was uTP-over-WireGuard congestion
+# collapse — see WORKLIST. Forcing TCP-only lifted aggregate from <1 MB/s
+# to 2-7 MB/s in measured A/B.
+#   bittorrent_protocol=1 (TCP only) — was 0 (TCP + uTP). uTP is UDP-based
+#     and congestion-friendly, which means it backs off hard on the
+#     micro-jitter the Proton WG path adds. The combination starves every
+#     uTP flow to single-digit KB/s. Modern peers all support TCP fallback,
+#     so we lose ~zero connectivity by disabling uTP.
+#   peer_tos=0 — was 1. qBit's default-1 sets a "low cost" DSCP byte on
+#     outbound packets; some upstream networks (Proton's egress included)
+#     interpret it as "deprioritize." Zero = no marking, regular best-effort.
+#   upload_choking_algorithm=2 (Anti-Leech) — was 1 (Fastest Upload). Fastest
+#     Upload preferentially rewards peers we're *already* sending fast to,
+#     which is the wrong policy when we're trying to bootstrap from a
+#     mass-restore cold-start: we have no fast relationships yet. Anti-Leech
+#     favors slot allocation to leechers, building ratio + reciprocity
+#     across the swarm. Round-Robin (0) would be similarly fine; Anti-Leech
+#     also actively penalizes leech-only clients which is a small bonus on
+#     private trackers.
 read -r -d '' PREFS_JSON <<'JSON' || true
 {
   "queueing_enabled": true,
@@ -94,6 +118,9 @@ read -r -d '' PREFS_JSON <<'JSON' || true
   "slow_torrent_dl_rate_threshold": 2048,
   "slow_torrent_ul_rate_threshold": 2048,
   "slow_torrent_inactive_timer": 60,
+  "bittorrent_protocol": 1,
+  "peer_tos": 0,
+  "upload_choking_algorithm": 2,
   "dl_limit": 31457280,
   "up_limit": 31457280,
   "scheduler_enabled": true,

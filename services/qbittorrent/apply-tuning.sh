@@ -38,14 +38,23 @@ SHOW=false
 # Queueing ON (changed 2026-05-22). Was off, on the theory that "every completed
 # torrent seeds 24/7" needs no queueing. True in steady state — but after the
 # Orpheus + BHD mass-restores the library now has 800+ torrents, with hundreds
-# in `downloading` / `stalledDL` simultaneously. With private trackers (no
-# DHT/PEX) and old/dead Orpheus swarms, those hundreds of in-flight downloads
-# split the 2000-conn global cap into ~3-4 peers each and sum to <1 MB/s
-# aggregate. The fix is to *queue* downloads: max_active_downloads=10 plus
-# dont_count_slow_torrents=true so a stalled dead-swarm torrent doesn't squat
-# in one of those 10 slots — it parks itself after 60s below 2 KB/s, freeing
-# the slot for a healthy one. max_active_uploads=1000 keeps all seeders active
-# (the previous "queueing off → all seed forever" guarantee is preserved).
+# simultaneously in `downloading` / `stalledDL`. Each had only 3-9 connected
+# peers (measured) — 500+ torrents × ~5 conn = ~2500, *over* the 2000 global
+# cap — so connection allocation was the binding resource. Aggregate
+# throughput collapsed to <1 MB/s against a 30 MiB/s ceiling.
+#
+# Queue 10 downloads at a time so each gets ~200 connections (matches
+# max_connec_per_torrent). dont_count_slow_torrents is INTENTIONALLY FALSE: in
+# this fleet's transient state every active torrent is below the 2 KB/s "slow"
+# threshold, so `true` would mark every torrent slow → none counts toward the
+# 10-slot cap → the cap nullifies itself (verified 2026-05-22: queuedDL=0 with
+# `true`). With `false` the cap is hard, ~370 torrents move to queuedDL, the
+# active 10 get the full connection budget and can actually ramp. Theoretical
+# downside (10 dead-swarm torrents could block the queue) is mitigated by the
+# 509-of-536 connected-peers observation — even "stalled" torrents have peers,
+# just not enough. max_active_uploads=1000 keeps every seeder active so the
+# previous "everything seeds" property is preserved — only downloads are
+# queued.
 #   30 MiB/s = 31457280   15 MiB/s = 15728640   8 MiB/s = 8388608
 # temp_path: in-progress pieces land on /incomplete (bind: /srv/qbit-incomplete,
 # the SATA SSD) instead of /mnt/media (USB HDD on exfat), where the small
@@ -81,7 +90,7 @@ read -r -d '' PREFS_JSON <<'JSON' || true
   "max_active_downloads": 10,
   "max_active_uploads": 1000,
   "max_active_torrents": 1010,
-  "dont_count_slow_torrents": true,
+  "dont_count_slow_torrents": false,
   "slow_torrent_dl_rate_threshold": 2048,
   "slow_torrent_ul_rate_threshold": 2048,
   "slow_torrent_inactive_timer": 60,

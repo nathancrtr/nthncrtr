@@ -93,7 +93,8 @@ def build_tracklist_bbcode(report: dict) -> str:
 def build_new_group_form(report: dict, manifest: dict, tags: str,
                          releasetype: int, album_desc: str,
                          release_desc: str, edition_year: str,
-                         edition_label: str, edition_catnum: str) -> list[tuple]:
+                         edition_label: str, edition_catnum: str,
+                         media: str, edition_title: str) -> list[tuple]:
     """Multipart form fields for a new-group upload. Returned as a list of
     tuples so we can have duplicate keys (artists[]/importance[]).
 
@@ -109,13 +110,13 @@ def build_new_group_form(report: dict, manifest: dict, tags: str,
         ("releasetype", str(releasetype)),
         ("format", report["format"]),
         ("bitrate", report["encoding"]),
-        ("media", report["media"]),  # 'WEB'
+        ("media", media),
         ("tags", tags),
         ("image", manifest["image_url"]),
         ("album_desc", album_desc),
         ("release_desc", release_desc),
         ("remaster_year", edition_year),
-        ("remaster_title", ""),  # blank = original edition (no special edition name)
+        ("remaster_title", edition_title),
     ]
     if edition_label:
         fields.append(("remaster_record_label", edition_label))
@@ -126,21 +127,22 @@ def build_new_group_form(report: dict, manifest: dict, tags: str,
 
 def build_add_to_group_form(report: dict, groupid: int, release_desc: str,
                             edition_year: str, edition_label: str,
-                            edition_catnum: str) -> list[tuple]:
+                            edition_catnum: str, media: str,
+                            edition_title: str) -> list[tuple]:
     """Each torrent in a Gazelle group also carries edition info — OPS matches
-    on (remaster_year, remaster_title, remaster_record_label, remaster_catalogue_number)
-    to decide whether this is a new edition or attaches to an existing one within
-    the group. Passing the same edition fields used for the new-group upload
+    on (remaster_year, remaster_title, remaster_record_label, remaster_catalogue_number,
+    media) to decide whether this is a new edition or attaches to an existing one
+    within the group. Passing the same edition fields used for the new-group upload
     attaches our additional formats to the same edition."""
     fields: list[tuple] = [
         ("type", "0"),  # 0 = Music; required even when groupid is set
         ("groupid", str(groupid)),
         ("format", report["format"]),
         ("bitrate", report["encoding"]),
-        ("media", report["media"]),
+        ("media", media),
         ("release_desc", release_desc),
         ("remaster_year", edition_year),
-        ("remaster_title", ""),
+        ("remaster_title", edition_title),
     ]
     if edition_label:
         fields.append(("remaster_record_label", edition_label))
@@ -200,6 +202,15 @@ def main() -> int:
                          "one (or looking one up via sibling manifests). Used by "
                          "fill_gap.py to upload a transcoded format into an existing "
                          "group whose FLAC is already on OPS.")
+    ap.add_argument("--media", default="",
+                    help="override the report's media value (default: 'WEB' from "
+                         "album_inspect). Gap-fill uses this to match the existing "
+                         "edition's media (CD/Vinyl/etc.) so the new torrent attaches "
+                         "to the right edition row instead of spawning a duplicate.")
+    ap.add_argument("--edition-title", default="",
+                    help="override remaster_title (default: '' = original edition). "
+                         "Gap-fill passes this when attaching to a non-original edition "
+                         "(e.g., 'Deluxe Edition') so we land on the right edition row.")
     ap.add_argument("--apply", action="store_true",
                     help="actually POST to OPS; default is dry-run")
     args = ap.parse_args()
@@ -242,6 +253,13 @@ def main() -> int:
     # that someone else's FLAC already created, so there's no sibling locally).
     groupid = args.groupid or find_existing_groupid(key)
 
+    # Honor explicit overrides; otherwise fall back to album_inspect's defaults
+    # (media defaults to WEB, which is right for the run_pipeline.py / Bandcamp
+    # flow but wrong for gap-fill against a CD/Vinyl/etc. edition — fill_gap.py
+    # passes --media explicitly for that case).
+    media = args.media or report["media"]
+    edition_title = args.edition_title
+
     if groupid is None:
         if not args.tags:
             print("--tags is required for a new-group upload "
@@ -257,17 +275,20 @@ def main() -> int:
         fields = build_new_group_form(report, manifest, args.tags,
                                       args.releasetype, album_desc,
                                       release_desc, edition_year,
-                                      args.label, args.catnum)
+                                      args.label, args.catnum,
+                                      media, edition_title)
         mode = f"NEW GROUP (album key: {key!r})"
     else:
         edition_year = args.edition_year or report["year"]
         fields = build_add_to_group_form(report, groupid, release_desc,
-                                         edition_year, args.label, args.catnum)
+                                         edition_year, args.label, args.catnum,
+                                         media, edition_title)
         mode = f"ADD TO EXISTING GROUP {groupid} (album key: {key!r})"
 
     print(f"  mode:    {mode}")
     print(f"  torrent: {manifest['torrent_path']}")
-    print(f"  image:   {manifest['image_url']}")
+    if "image_url" in manifest:
+        print(f"  image:   {manifest['image_url']}")
     print(f"  fields:")
     for k, v in fields:
         # Long fields like release_desc truncated for readability.

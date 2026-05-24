@@ -21,7 +21,13 @@ NATTO_HOST = "natto"
 MUSIC_DEST = "/mnt/media/music"
 SEED_ONLY_DEST = "/mnt/media/seed-only"
 
-SUFFIX_RE = re.compile(r"\[WEB (FLAC( 24bit)?|V0|V2|320|VBR\([^)]+\))\]$")
+# Accept any OPS-supported media value (kept symmetric with qbit_add.py).
+# Routing only cares whether the format starts with FLAC, so media is
+# informational here.
+SUFFIX_RE = re.compile(
+    r"\[(?:CD|WEB|Vinyl|SACD|DVD|Blu-Ray|Cassette|DAT|Soundboard) "
+    r"(FLAC( 24bit)?|V0|V2|320|VBR\([^)]+\))\]$"
+)
 
 
 def destination_for(album_dir: Path) -> str:

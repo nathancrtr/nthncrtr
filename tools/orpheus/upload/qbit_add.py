@@ -30,7 +30,13 @@ NATTO_HOST = "natto"
 QBIT_CONTAINER = "qbit-port-updater"  # runs inside gluetun's netns; localhost-auth-bypass applies
 QBIT_API = "http://127.0.0.1:8080/api/v2/torrents/add"
 
-SUFFIX_RE = re.compile(r"\[WEB (FLAC( 24bit)?|V0|V2|320|VBR\([^)]+\))\]$")
+# Accept any OPS-supported media value, not just WEB — gap-fill uploads use
+# CD/Vinyl/etc. to match the existing edition's source. Routing logic below
+# only cares whether the format starts with FLAC, so media is informational.
+SUFFIX_RE = re.compile(
+    r"\[(?:CD|WEB|Vinyl|SACD|DVD|Blu-Ray|Cassette|DAT|Soundboard) "
+    r"(FLAC( 24bit)?|V0|V2|320|VBR\([^)]+\))\]$"
+)
 MUSIC_DEST = "/mnt/media/music"
 SEED_ONLY_DEST = "/mnt/media/seed-only"
 

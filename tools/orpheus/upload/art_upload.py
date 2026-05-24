@@ -18,16 +18,27 @@ from pathlib import Path
 
 import requests
 
+sys.path.insert(0, str(Path(__file__).parent))
+from inspect import find_cover  # noqa: E402
+
 STATE_DIR = Path(__file__).parent / "state"
 CATBOX_URL = "https://catbox.moe/user/api.php"
 
+MIME_BY_EXT = {
+    ".jpg": "image/jpeg",
+    ".jpeg": "image/jpeg",
+    ".png": "image/png",
+    ".webp": "image/webp",
+}
+
 
 def upload_to_catbox(image_path: Path) -> str:
+    mime = MIME_BY_EXT.get(image_path.suffix.lower(), "application/octet-stream")
     with image_path.open("rb") as f:
         r = requests.post(
             CATBOX_URL,
             data={"reqtype": "fileupload"},
-            files={"fileToUpload": (image_path.name, f, "image/jpeg")},
+            files={"fileToUpload": (image_path.name, f, mime)},
             timeout=120,
         )
     r.raise_for_status()
@@ -51,7 +62,8 @@ def main() -> int:
     ap = argparse.ArgumentParser(description=__doc__,
                                  formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument("paths", type=Path, nargs="+",
-                    help="one or more album directories (each must contain cover.jpg)")
+                    help="one or more album directories (each must contain a cover sidecar — "
+                         "cover.jpg / .jpeg / .png / .webp / folder.*)")
     ap.add_argument("--image-url", type=str,
                     help="record this URL for every provided dir; skip catbox upload")
     ap.add_argument("--force", action="store_true",
@@ -64,9 +76,9 @@ def main() -> int:
 
     for path in args.paths:
         dirname = path.name
-        cover = path / "cover.jpg"
-        if not cover.exists():
-            print(f"  {dirname}: no cover.jpg; skipping", file=sys.stderr)
+        cover = find_cover(path)
+        if cover is None:
+            print(f"  {dirname}: no cover sidecar found; skipping", file=sys.stderr)
             continue
 
         manifest = load_manifest(dirname)

@@ -38,26 +38,14 @@ QBIT_ADD = STAGE_DIR / "qbit_add.py"
 
 PY = sys.executable  # use the same interpreter (the venv)
 
-# Mirror of normalize.py's build_dirname() — duplicated here so the harness
-# can predict post-normalize paths *before* normalize runs, so it knows what
-# paths to feed into stages 3+. Kept tiny on purpose; if normalize's naming
-# scheme changes, update both.
-def predict_normalize_name(report: dict) -> str:
-    fmt, enc = report["format"], report["encoding"]
-    if fmt == "FLAC":
-        suffix = "FLAC 24bit" if enc == "24bit Lossless" else "FLAC"
-    elif fmt == "MP3":
-        if enc == "320":
-            suffix = "320"
-        elif enc.startswith("V0"):
-            suffix = "V0"
-        elif enc.startswith("V2"):
-            suffix = "V2"
-        else:
-            suffix = enc.replace("(VBR)", "VBR").replace(" ", "")
-    else:
-        suffix = f"{fmt} {enc}"
-    return f"{report['artist']} - {report['album']} ({report['year']}) [WEB {suffix}]"
+# Reuse normalize.py's build_dirname() directly — previously a parallel
+# `predict_normalize_name()` lived here and drifted (it didn't apply the
+# rstrip(".") that `safe()` does, so artists like "Kaho Matsui & i.v."
+# computed a name with a trailing dot that didn't match what normalize
+# actually produced, and the harness then failed the post-normalize
+# existence check).
+sys.path.insert(0, str(STAGE_DIR))
+from normalize import build_dirname  # noqa: E402
 
 
 def inspect_dir(path: Path) -> dict:
@@ -115,7 +103,7 @@ def main() -> int:
         print(f"  format: {r['format']} {r['encoding']:>18}  ({r['track_count']} tracks, "
               f"{r['total_size_bytes']/1024/1024:.0f} MB)")
 
-    target_names = [predict_normalize_name(r) for r in reports]
+    target_names = [build_dirname(r) for r in reports]
     new_paths = [p.parent / name for p, name in zip(args.paths, target_names)]
 
     if not args.apply:

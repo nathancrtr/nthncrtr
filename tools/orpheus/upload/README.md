@@ -25,7 +25,7 @@ The harness `run_pipeline.py` invokes each stage in order. Each stage is a stand
 | 1 | `inspect.py` | Reads tags across FLAC/MP3, detects format/encoding, flags issues | no |
 | 2 | `normalize.py` | Strips Bandcamp `Visit ...` from COMMENT tags; renames dir to `Artist - Album (Year) [WEB FORMAT]` | local files |
 | 3 | `transfer.py` | rsyncs FLAC dirs to `natto:/mnt/media/music/`; MP3 dirs to `natto:/mnt/media/seed-only/` | natto fs |
-| 4 | `art_upload.py` | Uploads `cover.jpg` to catbox.moe (or pass `--image-url` to use a manual URL) | catbox.moe |
+| 4 | `art_upload.py` | Uploads the cover sidecar to catbox.moe (looks for `cover.{jpg,jpeg,png,webp}` then `folder.{jpg,jpeg,png}`; or pass `--image-url` to use a manual URL) | catbox.moe |
 | 5 | `make_torrent.py` | Builds `.torrent` files (pure-Python bencode + SHA1) with the OPS announce URL + private + source=OPS | local files |
 | 6 | `ops_upload.py` | POSTs to `https://orpheus.network/ajax.php?action=upload`. New group on first format, add-to-group on subsequent. | OPS |
 | 7 | `qbit_add.py` | Adds each `.torrent` to qBittorrent on natto via the `qbit-port-updater` sidecar's localhost-auth-bypass. | natto qBit |
@@ -59,6 +59,11 @@ natto:/mnt/media/seed-only/             ← qBit seeds; Navidrome doesn't see
 tools/orpheus/upload/torrents/          ← per-format .torrent files (gitignored)
 tools/orpheus/upload/state/             ← per-album manifests (gitignored)
 ```
+
+## Prerequisites
+
+- **SSH agent loaded** with the key authorized on natto. Stages 3 (`transfer`) and 7 (`qbit_add`) shell out to `ssh natto …` non-interactively, so an agent prompt mid-pipeline will fail. Before running: `ssh-add ~/.ssh/id_ed25519` (macOS keychain caches the passphrase for subsequent sessions).
+- **`tools/orpheus/.venv`** populated from `requirements.txt`. The pipeline scripts assume `tools/orpheus/.venv/bin/python`.
 
 ## Secrets (`tools/orpheus/secrets.env`, gitignored)
 

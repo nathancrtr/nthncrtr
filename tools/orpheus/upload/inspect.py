@@ -30,6 +30,21 @@ ID3_MAP = {
 }
 REQUIRED_TAGS = ("title", "artist", "album", "tracknumber", "date")
 
+# Cover sidecar candidates, in priority order. Bandcamp ships cover.jpg, but
+# some sources (e.g., labels uploading via Bandcamp) ship cover.png; both
+# are acceptable for OPS as long as the URL we hand it resolves to an image.
+COVER_CANDIDATES = ("cover.jpg", "cover.jpeg", "cover.png", "cover.webp",
+                    "folder.jpg", "folder.jpeg", "folder.png")
+
+
+def find_cover(album_dir: Path) -> Path | None:
+    """Return the first present cover sidecar, or None."""
+    for name in COVER_CANDIDATES:
+        p = album_dir / name
+        if p.exists():
+            return p
+    return None
+
 
 def detect_format(track: Path) -> tuple[str, str]:
     """Return (format, encoding) using OPS's vocabulary.
@@ -149,9 +164,9 @@ def inspect_album(album_dir: Path) -> dict:
     if missing_art:
         issues.append(f"{len(missing_art)} tracks missing embedded art")
 
-    cover_path = album_dir / "cover.jpg"
+    cover_path = find_cover(album_dir)
     cover_info: dict | None = None
-    if cover_path.exists():
+    if cover_path is not None:
         cover_md5 = hashlib.md5(cover_path.read_bytes()).hexdigest()
         cover_info = {
             "path": str(cover_path),
@@ -163,7 +178,7 @@ def inspect_album(album_dir: Path) -> dict:
         # full-res original as the sidecar; expected, not an issue. We'll use
         # the sidecar for the OPS upload and leave embedded art alone.
     else:
-        issues.append("no cover.jpg sidecar")
+        issues.append(f"no cover sidecar (looked for {', '.join(COVER_CANDIDATES)})")
 
     bandcamp_signature = any(
         "bandcamp" in str(td["tags"].get("comment", "")).lower()

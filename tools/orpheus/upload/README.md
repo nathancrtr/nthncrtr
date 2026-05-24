@@ -4,8 +4,19 @@ End-to-end automation: take an album you bought from Bandcamp (or another lossle
 
 ## TL;DR
 
+Two ways to invoke. Pick whichever matches what's on disk.
+
+**Scan mode** — point at a parent dir, the harness auto-groups format dirs by `(artist, album, year)` read from track tags, then walks each ready triplet one at a time prompting only for OPS tags:
+
 ```sh
 cd tools/orpheus
+.venv/bin/python upload/run_pipeline.py --scan ~/Downloads            # plan only
+.venv/bin/python upload/run_pipeline.py --scan ~/Downloads --apply    # interactive run
+```
+
+**Explicit-paths mode** — pass all format dirs for one album in a single invocation:
+
+```sh
 .venv/bin/python upload/run_pipeline.py \
     --apply \
     --tags "indie.pop, indie.folk, indie.rock" \
@@ -14,7 +25,7 @@ cd tools/orpheus
     ~/Downloads/"A Weather - Cove (mp3 v0)"
 ```
 
-All format dirs for **one** album go in a single invocation. The FLAC, if present, is uploaded to OPS first (creates the torrent group); the MP3 formats then attach to the same group. Default is dry-run; `--apply` is required to actually mutate.
+In both modes: the FLAC, if present, is uploaded to OPS first (creates the torrent group); the MP3 formats then attach to the same group. Default is dry-run; `--apply` is required to actually mutate. With `--apply`, the harness does a non-interactive `ssh natto` preflight up front and fails fast (pointing at `ssh-add`) so you don't lose work mid-pipeline.
 
 ## Pipeline stages
 

@@ -28,7 +28,7 @@ from botocore.config import Config
 from botocore.exceptions import BotoCoreError, ClientError
 
 sys.path.insert(0, str(Path(__file__).parent))
-from inspect import find_cover  # noqa: E402
+from album_inspect import find_cover  # noqa: E402
 
 STATE_DIR = Path(__file__).parent / "state"
 SECRETS_PATH = Path(__file__).parent.parent / "secrets.env"

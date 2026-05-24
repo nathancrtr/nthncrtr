@@ -33,7 +33,7 @@ The harness `run_pipeline.py` invokes each stage in order. Each stage is a stand
 
 | # | Script | What it does | Mutates |
 |---|---|---|---|
-| 1 | `inspect.py` | Reads tags across FLAC/MP3, detects format/encoding, flags issues | no |
+| 1 | `album_inspect.py` | Reads tags across FLAC/MP3, detects format/encoding, flags issues | no |
 | 2 | `normalize.py` | Strips Bandcamp `Visit ...` from COMMENT tags; renames dir to `Artist - Album (Year) [WEB FORMAT]` | local files |
 | 3 | `transfer.py` | rsyncs FLAC dirs to `natto:/mnt/media/music/`; MP3 dirs to `natto:/mnt/media/seed-only/` | natto fs |
 | 4 | `art_upload.py` | Uploads the cover sidecar to catbox.moe (looks for `cover.{jpg,jpeg,png,webp}` then `folder.{jpg,jpeg,png}`; or pass `--image-url` to use a manual URL) | catbox.moe |
@@ -100,7 +100,7 @@ The first run uncovered these in order; the scripts now handle them, but if you 
 For debugging or partial runs:
 
 ```sh
-.venv/bin/python upload/inspect.py "<dir>" [...]
+.venv/bin/python upload/album_inspect.py "<dir>" [...]
 .venv/bin/python upload/normalize.py [--apply] "<dir>" [...]
 .venv/bin/python upload/transfer.py [--dry-run] "<dir>" [...]
 .venv/bin/python upload/art_upload.py [--image-url URL | --force] "<dir>" [...]

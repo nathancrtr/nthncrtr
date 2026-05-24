@@ -51,7 +51,7 @@ NATTO_HOST = "natto"
 # existence check).
 sys.path.insert(0, str(STAGE_DIR))
 from normalize import build_dirname  # noqa: E402
-from inspect import inspect_album  # noqa: E402
+from album_inspect import inspect_album  # noqa: E402
 
 
 def preflight_ssh() -> None:

@@ -24,7 +24,7 @@ from mutagen import File as MutagenFile
 
 # Import the report-building bits from the sibling stage so we don't drift.
 sys.path.insert(0, str(Path(__file__).parent))
-from inspect import inspect_album  # noqa: E402
+from album_inspect import inspect_album  # noqa: E402
 
 # Characters that break on at least one major filesystem (FAT/NTFS). ext4 (natto's
 # music drive root) accepts almost everything; we sanitize anyway so the torrent

@@ -22,7 +22,7 @@ from pathlib import Path
 import requests
 
 sys.path.insert(0, str(Path(__file__).parent))
-from inspect import inspect_album  # noqa: E402
+from album_inspect import inspect_album  # noqa: E402
 
 STATE_DIR = Path(__file__).parent / "state"
 SECRETS_PATH = Path(__file__).parent.parent / "secrets.env"
@@ -195,6 +195,11 @@ def main() -> int:
                     help="record label for this edition (e.g., 'Self-Released' for Bandcamp)")
     ap.add_argument("--catnum", type=str, default="",
                     help="catalogue number for this edition (often blank for Bandcamp)")
+    ap.add_argument("--groupid", type=int, default=0,
+                    help="attach to this existing OPS group instead of creating a new "
+                         "one (or looking one up via sibling manifests). Used by "
+                         "fill_gap.py to upload a transcoded format into an existing "
+                         "group whose FLAC is already on OPS.")
     ap.add_argument("--apply", action="store_true",
                     help="actually POST to OPS; default is dry-run")
     args = ap.parse_args()
@@ -210,9 +215,9 @@ def main() -> int:
 
     dirname = args.path.name
     manifest = load_manifest(dirname)
-    if "image_url" not in manifest:
-        print(f"manifest missing image_url; run art_upload.py first", file=sys.stderr)
-        return 1
+    # image_url is only required for new-group uploads (it's the cover art
+    # for the group page); add-to-group uploads don't accept an image field,
+    # so the check is deferred to the new-group branch below.
     if "torrent_path" not in manifest:
         print(f"manifest missing torrent_path; run make_torrent.py first", file=sys.stderr)
         return 1
@@ -232,12 +237,20 @@ def main() -> int:
     release_desc = args.release_desc
 
     key = album_key(dirname)
-    groupid = find_existing_groupid(key)
+    # Explicit --groupid wins; otherwise look for a sibling manifest. The
+    # explicit path is what gap-fill uploads use (they're attaching to a group
+    # that someone else's FLAC already created, so there's no sibling locally).
+    groupid = args.groupid or find_existing_groupid(key)
 
     if groupid is None:
         if not args.tags:
             print("--tags is required for a new-group upload "
                   "(no sibling format has been uploaded yet for this album)",
+                  file=sys.stderr)
+            return 1
+        if "image_url" not in manifest:
+            print("manifest missing image_url; run art_upload.py first "
+                  "(required for new-group uploads — the group page cover)",
                   file=sys.stderr)
             return 1
         edition_year = args.edition_year or report["year"]

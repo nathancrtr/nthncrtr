@@ -116,8 +116,11 @@ def first_int(s: str | None) -> int | None:
 def inspect_album(album_dir: Path) -> dict:
     if not album_dir.is_dir():
         return {"path": str(album_dir), "error": "not a directory"}
-    tracks = sorted(p for p in album_dir.iterdir()
-                    if p.suffix.lower() in (".flac", ".mp3"))
+    # Recursive — multi-disc releases lay out as Album/Disc 1/track.flac.
+    # Flat single-dir layouts still work since rglob descends just once
+    # when there are no subdirs.
+    tracks = sorted(p for p in album_dir.rglob("*")
+                    if p.is_file() and p.suffix.lower() in (".flac", ".mp3"))
     if not tracks:
         return {"path": str(album_dir), "error": "no audio files found"}
 

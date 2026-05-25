@@ -134,10 +134,15 @@ def remote_dir_exists(path: str) -> bool:
 
 
 def remote_list_flacs(album_dir: str) -> list[str]:
-    """Return the absolute paths of *.flac files in album_dir on natto."""
+    """Return the absolute paths of *.flac files anywhere under album_dir.
+
+    Recursive on purpose — multi-disc releases live in subdirs like
+    'Album/Disc 1/01 Track.flac' and need to be counted alongside flat
+    layouts.
+    """
     r = subprocess.run(
         ["ssh", NATTO_HOST,
-         f"find {shlex.quote(album_dir)} -maxdepth 1 -name '*.flac' -type f -print"],
+         f"find {shlex.quote(album_dir)} -name '*.flac' -type f -print"],
         capture_output=True, check=True)
     return sorted(l for l in r.stdout.decode().splitlines() if l.strip())
 
@@ -167,28 +172,35 @@ def remote_transcode(source_dir: str, target_dir: str,
         raise ValueError(
             f"safety: target_dir must be under {NATTO_SEED_ONLY}/, got {target_dir!r}")
 
-    # Bash-on-natto: mkdir, loop over flacs, ffmpeg each, copy cover.* if any.
-    # ffmpeg -map 0 -c:v copy preserves embedded art; -id3v2_version 3 gives
-    # broadest player compat; -map_metadata 0 carries tags across; -nostdin
-    # so it doesn't try to grab a tty.
+    # Bash-on-natto: recursive find of .flac files (handles multi-disc albums
+    # like "Album/Disc 1/01 Track.flac"), mirroring the subdir structure in
+    # the output. ffmpeg flags: -map 0 -c:v copy preserves embedded art;
+    # -id3v2_version 3 gives broadest player compat; -map_metadata 0 carries
+    # tags across; -nostdin so it doesn't try to grab a tty.
     lame = " ".join(shlex.quote(a) for a in lame_args)
     remote_script = f"""set -euo pipefail
 src={shlex.quote(source_dir)}
 dst={shlex.quote(target_dir)}
 mkdir -p "$dst"
 count=0
-for f in "$src"/*.flac; do
-  [ -e "$f" ] || continue
-  base=$(basename "$f" .flac)
+# Recursive find — supports both flat dirs and multi-disc layouts.
+while IFS= read -r -d '' f; do
+  rel="${{f#$src/}}"
+  out="$dst/${{rel%.flac}}.mp3"
+  mkdir -p "$(dirname "$out")"
   ffmpeg -hide_banner -loglevel error -nostdin \\
     -i "$f" \\
     -map 0 -map_metadata 0 -id3v2_version 3 \\
     -c:v copy {lame} \\
-    "$dst/$base.mp3"
+    "$out"
   count=$((count + 1))
-done
+done < <(find "$src" -type f -name '*.flac' -print0)
 echo "transcoded $count tracks → $dst"
-# Cover sidecars (jpg/jpeg/png/webp/folder.*): copy whatever's there.
+if [ "$count" -eq 0 ]; then
+  echo "ERROR: no .flac files found under $src" >&2
+  exit 2
+fi
+# Cover sidecars (jpg/jpeg/png/webp/folder.*): copy whatever's at the top level.
 shopt -s nullglob
 for c in "$src"/cover.* "$src"/folder.*; do
   cp -p "$c" "$dst/"
@@ -268,7 +280,7 @@ def fill_one_format(api_key: str,
     if remote_dir_exists(natto_target_dir):
         existing_mp3s = subprocess.run(
             ["ssh", NATTO_HOST,
-             f"find {shlex.quote(natto_target_dir)} -maxdepth 1 -name '*.mp3' "
+             f"find {shlex.quote(natto_target_dir)} -name '*.mp3' "
              f"-type f | wc -l"],
             capture_output=True, check=True).stdout.decode().strip()
         source_flacs = len(remote_list_flacs(natto_source_dir))

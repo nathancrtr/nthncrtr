@@ -238,6 +238,16 @@ def main() -> int:
         return 0
 
     report = inspect_album(args.path)
+    # album_inspect returns {"error": "..."} for non-album dirs (no audio files,
+    # not a directory, etc.). Surface that as a clear failure here instead of
+    # crashing on KeyError further down. Caught one in the wild: a multi-disc
+    # transcode dir whose ffmpeg loop matched zero flat-level FLACs and so
+    # produced an empty MP3 dir; the older fill_gap.py glob has since been
+    # fixed to recurse, but this guard catches the class of failure cleanly.
+    if "error" in report or not report.get("tracks"):
+        print(f"inspect_album found no usable audio in {args.path}: "
+              f"{report.get('error', 'no tracks')}", file=sys.stderr)
+        return 1
     if report.get("issues"):
         print(f"WARNING — inspect reports issues:\n  - " +
               "\n  - ".join(report["issues"]), file=sys.stderr)

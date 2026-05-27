@@ -2,10 +2,11 @@
 
 Local media server for the video library on the 5TB drive. One container
 (`lscr.io/linuxserver/jellyfin`), no database sidecar (Jellyfin embeds
-SQLite). **This is the one deliberately internet-exposed service** (trusted
-users, per-user Jellyfin accounts — operator decision, WORKLIST 6.6).
-Everything else on natto stays tailnet-only; the scoping that keeps it that
-way is described under *Reachability* below — read it before touching the
+SQLite). **One of two deliberately internet-exposed services** (the other
+is [Seerr](../seerr/), the request manager; trusted users, per-user
+Jellyfin accounts — operator decisions, WORKLIST 6.6 + 6.7). Everything
+else on natto stays tailnet-only; the scoping that keeps it that way is
+described under *Reachability* below — read it before touching the
 Caddyfile or the router.
 
 ## Where things live
@@ -22,17 +23,19 @@ Caddyfile or the router.
 | Networking | `network_mode: host` — binds `8096` (+ `8920`, `1900/udp`, `7359/udp`) directly on natto. Not bridge/published; see compose header (DNS-rebinding guard / stable `127.0.0.1` proxy) |
 | Reachability | **Public** at `https://play.nthncrtr.com` (one clean URL, no port, inside + out) via Cloudflare Tunnel; raw `http://natto:8096` / tailnet still work |
 
-### How "public, but only Jellyfin" actually works
+### How "public, but only Jellyfin + Seerr" actually works
 
-This is the only `*.nthncrtr.com` name reachable from the internet, and the
-containment is now structural — a Cloudflare Tunnel maps exactly one
-hostname to one service:
+This is one of two `*.nthncrtr.com` names reachable from the internet
+(the other is `requests.nthncrtr.com` → Seerr), and the containment is
+structural — the Cloudflare Tunnel's `ingress:` list is the entire
+exposure allowlist:
 
 1. **Cloudflare Tunnel** (`services/cloudflared`): `cloudflared` on natto
-   dials **out** to Cloudflare and serves only the ingress rule
-   `play.nthncrtr.com → http://localhost:8096` (Jellyfin). Nothing else on
-   natto is reachable through it, by construction — better scoping than any
-   router/Caddy trick. The router is bypassed entirely.
+   dials **out** to Cloudflare and serves only the ingress rules
+   `play.nthncrtr.com → http://localhost:8096` (Jellyfin) and
+   `requests.nthncrtr.com → http://localhost:5055` (Seerr). Nothing else
+   on natto is reachable through it, by construction — better scoping
+   than any router/Caddy trick. The router is bypassed entirely.
 2. **Inside path** (`services/caddy/Caddyfile` + Pi-hole split-horizon):
    LAN clients must *not* round-trip through Cloudflare for local 4k.
    Pi-hole resolves `play.nthncrtr.com` → natto's LAN IP → Caddy's

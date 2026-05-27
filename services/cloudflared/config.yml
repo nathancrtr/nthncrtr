@@ -10,13 +10,22 @@ tunnel: REPLACE_WITH_TUNNEL_UUID
 credentials-file: /etc/cloudflared/credentials.json
 
 # Be conservative on the origin: cloudflared only exposes what is listed
-# here. play.nthncrtr.com → Jellyfin directly (localhost:8096, host net).
-# Everything else returns 404 — nothing else on natto is reachable via the
-# tunnel, by construction. This is the scoping guarantee that replaces the
-# old ":8443-only" Caddy trick.
+# here. The hostnames below are the entire public surface area of natto;
+# everything else returns 404. This list IS the internet-exposure
+# allowlist — adding a third entry is an explicit operator decision that
+# requires updating CLAUDE.md safety rule 8 in the same change. This is
+# the scoping guarantee that replaces the old ":8443-only" Caddy trick.
+#
+#   play.nthncrtr.com     → Jellyfin (network_mode: host, :8096)
+#   requests.nthncrtr.com → Seerr   (bridge, host-publish 127.0.0.1:5055)
+#
+# Both upstreams reach `localhost` because cloudflared runs with
+# network_mode: host on natto (see docker-compose.yml).
 ingress:
   - hostname: play.nthncrtr.com
     service: http://localhost:8096
+  - hostname: requests.nthncrtr.com
+    service: http://localhost:5055
   - service: http_status:404
 
 # Jellyfin needs websockets + long media streams; cloudflared handles both

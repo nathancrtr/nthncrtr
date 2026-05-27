@@ -1,8 +1,14 @@
-# cloudflared — Cloudflare Tunnel (the public path for Jellyfin)
+# cloudflared — Cloudflare Tunnel (the public path)
 
-The **only** way `play.nthncrtr.com` is reachable from the internet. One
-container, outbound-only, exposes exactly `play.nthncrtr.com → Jellyfin`
-and nothing else on natto.
+The **only** way anything on natto is reachable from the internet. One
+container, outbound-only. The `ingress:` list in `config.yml` is the
+exposure allowlist; currently two services:
+
+- `play.nthncrtr.com` → Jellyfin (WORKLIST 6.6)
+- `requests.nthncrtr.com` → Seerr (WORKLIST 6.7)
+
+Everything else returns 404. Adding a third entry is an explicit
+operator decision — update CLAUDE.md safety rule 8 in the same change.
 
 ## Why a tunnel (the GFiber dead-end, short version)
 
@@ -82,6 +88,24 @@ ssh -t natto 'cd /srv/nthncrtr-repo && git pull && sudo ./deploy.sh cloudflared'
 if the deployed copy still has the placeholder** (so step 4 is never
 clobbered), warns if `credentials.json` is missing, and brings the
 container up.
+
+## Adding a hostname later (the allowlist grows)
+
+The tunnel UUID and credentials don't change — only `config.yml` does.
+Because the deployed `/srv/cloudflared/config.yml` already has the real
+UUID, `deploy.sh cloudflared` deliberately won't overwrite it from the
+repo (placeholder gate, above). So:
+
+1. Edit `services/cloudflared/config.yml` in this repo: add the new
+   `hostname` + `service` pair under `ingress:`, **before** the
+   `http_status:404` catch-all. Commit.
+2. Create the proxied CNAME for the new name (orange-cloud, points at
+   the SAME tunnel): `cloudflared tunnel route dns play <new-hostname>`.
+3. Mirror the change in the deployed copy on natto: edit
+   `/srv/cloudflared/config.yml` in place (`sudo nano` / `sudo vim`) to
+   match the repo, then `sudo docker restart cloudflared`.
+4. Update CLAUDE.md safety rule 8 in the same change — the rule names
+   what's intentionally exposed, and the two lists must agree.
 
 ## Operating
 

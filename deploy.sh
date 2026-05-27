@@ -11,15 +11,19 @@
 # One-time bootstrap (not handled here): git clone this repo to
 # /srv/nthncrtr-repo and put a read-only deploy key at /root/.ssh/.
 #
-# Services: caddy navidrome backup qbittorrent radarr sonarr prowlarr homepage nextcloud jellyfin immich cloudflared authelia pihole starmaya
-# Default (no service args): caddy navidrome backup qbittorrent radarr sonarr prowlarr homepage nextcloud jellyfin immich cloudflared
+# Services: caddy navidrome backup qbittorrent radarr sonarr prowlarr homepage nextcloud jellyfin seerr immich cloudflared authelia pihole starmaya
+# Default (no service args): caddy navidrome backup qbittorrent radarr sonarr prowlarr homepage nextcloud jellyfin seerr immich cloudflared
 #   — homepage is AFTER the *arrs/qBittorrent on purpose: its widgets reach
 #     them over those compose projects' (external) docker networks, which
 #     only exist once those projects have come up. Steady-state re-deploys
 #     are fine in any order (the nets persist with the running containers).
-#   — cloudflared exists only because Jellyfin is public (WORKLIST 6.6):
-#     it's the Cloudflare Tunnel public path (GFiber can't port-forward —
-#     see services/cloudflared/README.md). Default-on; harmless before the
+#   — seerr is AFTER jellyfin and AFTER the *arrs: it joins arrnet (created
+#     by ensure_arrnet, same as Sonarr/Radarr/Prowlarr) and reaches Jellyfin
+#     via host.docker.internal. Public via the same Cloudflare Tunnel as
+#     Jellyfin (WORKLIST 6.7).
+#   — cloudflared exists because Jellyfin + Seerr are public (WORKLIST
+#     6.6/6.7): one tunnel, two ingress entries, GFiber can't port-forward
+#     (see services/cloudflared/README.md). Default-on; harmless before the
 #     tunnel is provisioned. (ddns and fail2ban were both removed in the
 #     6.6 pivots — a tunnel needs no WAN-IP A record, and brute-force
 #     protection is a Cloudflare dashboard Rate-Limiting rule, not a
@@ -44,8 +48,8 @@ usage() {
   cat <<'EOF'
 Usage: sudo ./deploy.sh [--dry-run] [--yes-pihole] [services...]
 
-Services: caddy navidrome backup qbittorrent radarr sonarr prowlarr homepage nextcloud jellyfin immich cloudflared pihole starmaya
-Default (no service args): caddy navidrome backup qbittorrent radarr sonarr prowlarr homepage nextcloud jellyfin immich cloudflared
+Services: caddy navidrome backup qbittorrent radarr sonarr prowlarr homepage nextcloud jellyfin seerr immich cloudflared pihole starmaya
+Default (no service args): caddy navidrome backup qbittorrent radarr sonarr prowlarr homepage nextcloud jellyfin seerr immich cloudflared
 EOF
   exit "${1:-0}"
 }
@@ -63,7 +67,7 @@ done
 
 SERVICES=("$@")
 if [[ ${#SERVICES[@]} -eq 0 ]]; then
-  SERVICES=(caddy navidrome backup qbittorrent radarr sonarr prowlarr homepage nextcloud jellyfin immich cloudflared)
+  SERVICES=(caddy navidrome backup qbittorrent radarr sonarr prowlarr homepage nextcloud jellyfin seerr immich cloudflared)
   (( YES_PIHOLE )) && SERVICES+=(pihole)
 fi
 
@@ -406,6 +410,32 @@ deploy_jellyfin() {
   # services/jellyfin/README.md (it depends on the router port-forward +
   # Cloudflare record, which deploy.sh cannot assert).
   verify_url http://127.0.0.1:8096/health 200 || true
+}
+
+deploy_seerr() {
+  log "seerr"
+  local CHANGED=0
+  (( DRY_RUN )) || {
+    # Config dir owned by UID 1000 (the `node` user inside the GHCR image —
+    # NOT the linuxserver PUID/PGID=nthncrtr pattern used elsewhere). The
+    # parent /srv/seerr/ stays root-owned; the container only writes inside
+    # config/. No /mnt/media binds — Seerr is metadata-only.
+    [[ -d /srv/seerr ]]        || { install -d -o root -g root -m 0755 /srv/seerr;        note "created /srv/seerr"; }
+    [[ -d /srv/seerr/config ]] || { install -d -o 1000 -g 1000 -m 0755 /srv/seerr/config; note "created /srv/seerr/config (UID 1000)"; }
+  }
+  install_file "$REPO_ROOT/services/seerr/docker-compose.yml" /srv/seerr/docker-compose.yml
+  (( DRY_RUN )) && return 0
+  # arrnet (shared with Sonarr/Radarr/Prowlarr) is how Seerr reaches the *arrs
+  # by container name; ensure it exists before bringing the stack up.
+  ensure_arrnet
+  compose_up seerr
+  sleep 5
+  # Localhost check — public URL needs the cloudflared ingress entry + the
+  # Cloudflare CNAME + Pi-hole local-DNS override, none of which deploy.sh
+  # asserts. /api/v1/settings/public is unauthenticated and is the same
+  # endpoint Seerr's in-container healthcheck uses.
+  verify_url http://127.0.0.1:5055/api/v1/settings/public 200 || \
+    warn "seerr not answering yet — first boot initializes SQLite; check 'docker logs seerr'"
 }
 
 deploy_immich() {

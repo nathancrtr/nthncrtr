@@ -119,6 +119,18 @@ play.nthncrtr.com {
 	reverse_proxy 127.0.0.1:8096
 }
 
+# Seerr — request manager paired with Jellyfin (services/seerr). Like
+# play. above, this block is the INSIDE-ONLY path; the public ingress is
+# the same Cloudflare Tunnel (services/cloudflared), with
+# requests.nthncrtr.com → Seerr added to the tunnel's ingress allowlist.
+# NO `import authelia`: Seerr ships a native mobile app and forward_auth
+# would break it, same reasoning as Jellyfin/Immich. The gate is Jellyfin
+# SSO + a Cloudflare WAF Rate-Limiting rule on /api/v1/auth/jellyfin
+# (dashboard state, not in repo). See services/seerr/README.md.
+requests.nthncrtr.com {
+	reverse_proxy 127.0.0.1:5055
+}
+
 :443 {
 	abort
 }

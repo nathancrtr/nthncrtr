@@ -36,10 +36,10 @@ flowchart LR
         Kvass["kvass / starmaya<br/>roaster-daemon + roaster-web<br/>100.65.46.92:8080"]:::tnet
     end
 
-    PiholeDNS["Pi-hole DNS @ 192.168.1.240<br/>local overrides:<br/>music.nthncrtr.com → 192.168.1.50<br/>play.nthncrtr.com → 192.168.1.50<br/>everything else → upstream"]:::lan
+    PiholeDNS["Pi-hole DNS @ natto<br/>local overrides:<br/>play.nthncrtr.com → 192.168.1.240<br/>music.nthncrtr.com → 192.168.1.50 (alias)<br/>requests.nthncrtr.com → 192.168.1.50 (alias)<br/>everything else → upstream"]:::lan
     Internet([Public internet]):::public
 
-    subgraph NATTO["natto (Beelink S12, Ubuntu 26.04) — LAN 192.168.1.50 / Tailscale 100.122.71.33"]
+    subgraph NATTO["natto (Beelink S12, Ubuntu 26.04) — LAN 192.168.1.240 (+ .50 alias) / Tailscale 100.122.71.33"]
         direction TB
 
         Cloudflared["cloudflared<br/>(outbound tunnel)<br/>play.nthncrtr.com → 127.0.0.1:8096"]:::public
@@ -89,7 +89,7 @@ flowchart LR
 
     %% (3) Inside-LAN split-horizon
     InHouse -- "DNS query" --> PiholeDNS
-    PiholeDNS -- "override → 192.168.1.50<br/>(LAN-direct, no Tailscale hop)" --> Caddy
+    PiholeDNS -- "override → natto<br/>(LAN-direct, no Tailscale hop)" --> Caddy
     InHouse -. "other *.nthncrtr.com<br/>(forwarded upstream)" .-> CFDNS
 
     %% Tailnet mesh

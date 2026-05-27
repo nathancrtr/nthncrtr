@@ -943,9 +943,10 @@ Jellyfin in 6.6.
    (proxied / orange-cloud). From a machine with cloudflared logged in:
    `cloudflared tunnel route dns play requests.nthncrtr.com`.
 2. **Pi-hole local-DNS override** for inside clients —
-   `192.168.1.50 requests.nthncrtr.com` via the v6 UI (Settings → Local
+   `192.168.1.240 requests.nthncrtr.com` via the v6 UI (Settings → Local
    DNS Records); auto-reloads, no DNS outage. Without this, inside
-   clients hairpin through Cloudflare.
+   clients hairpin through Cloudflare. (`.240` = natto's primary; `.50`
+   alias also works — see CLAUDE.md.)
 3. **Cloudflare WAF Rate-Limiting rule** in the dashboard parallel to
    Jellyfin's: match URI path `/api/v1/auth/jellyfin` method `POST`,
    ~5 req/min per IP → managed-challenge ~10 min. Dashboard state, not

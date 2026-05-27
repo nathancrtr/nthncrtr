@@ -44,10 +44,11 @@ update CLAUDE.md safety rule 8, document it. Don't silently extend.
 - **Cloudflare CNAME** `requests.nthncrtr.com → <tunnel-uuid>.cfargotunnel.com`
   (proxied / orange-cloud — created by
   `cloudflared tunnel route dns play requests.nthncrtr.com`).
-- **Pi-hole local-DNS override** `192.168.1.50 requests.nthncrtr.com` so
-  inside clients hit Caddy directly instead of hairpinning through
+- **Pi-hole local-DNS override** `192.168.1.240 requests.nthncrtr.com`
+  so inside clients hit Caddy directly instead of hairpinning through
   Cloudflare. (Add via Pi-hole UI → Settings → Local DNS Records — see
-  the Jellyfin README's split-horizon section.)
+  the Jellyfin README's split-horizon section. `.240` is natto's primary
+  LAN IP; the `.50` alias also works — see CLAUDE.md.)
 - **Caddy** inside-only vhost in `services/caddy/Caddyfile` —
   `reverse_proxy 127.0.0.1:5055`, no `import authelia`.
 

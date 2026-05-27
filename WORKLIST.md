@@ -884,6 +884,121 @@ brute-force layer. Jellyfin's own data/accounts untouched. Restoring
 `services/ddns` or `services/fail2ban` is **not**
 part of rollback (it's obsolete regardless — the router path is dead).
 
+### 6.7 Seerr — request manager paired with public Jellyfin  [PLANNED]
+
+**Goal:** Stand up [Seerr](https://github.com/seerr-team/seerr) (the
+merged successor to Jellyseerr/Overseerr) so the same trusted users who
+reach Jellyfin at `play.nthncrtr.com` can request titles at
+`requests.nthncrtr.com` and have those requests flow into the existing
+Sonarr/Radarr + qBittorrent pipeline. This makes Seerr the **second**
+internet-exposed service, sharing the Cloudflare Tunnel established for
+Jellyfin in 6.6.
+
+**Preconditions:**
+- 6.6 Jellyfin-public is live (tunnel up, DNS, WAF rule, per-user
+  accounts). Without it, the framing "shared media for friends" has
+  nothing to share — Seerr alone serves no one.
+- Sonarr + Radarr running on `arrnet` (the `ensure_arrnet` external
+  network), API keys retrievable from each *arr's Settings → General.
+- Internal `/srv/seerr/config` on the Beelink's ext4 (POSIX-locking is a
+  SQLite hard requirement — same reasoning as Jellyfin/Nextcloud; do
+  **not** put the config on `/mnt/media`).
+
+**Repo plumbing (this mission's commits — all shipped):**
+1. `services/seerr/` — `docker-compose.yml` (image
+   `ghcr.io/seerr-team/seerr:latest`, `init: true`, env `TZ` +
+   `LOG_LEVEL`, volume `./config:/app/config`, port
+   `127.0.0.1:5055:5055` (loopback only — safety rule 9 logic: any LAN
+   path bypasses the WAF), networks `default` + `arrnet`, `extra_hosts:
+   host.docker.internal:host-gateway` for reaching Jellyfin which is
+   `network_mode: host`, built-in healthcheck on
+   `/api/v1/settings/public`) + `README.md` (operator runbook).
+2. `services/caddy/Caddyfile` — append `requests.nthncrtr.com` block
+   (`reverse_proxy 127.0.0.1:5055`, **no** `import authelia` — same
+   reasoning as `play.`: forward_auth would break Seerr's native mobile
+   app, parallel to Jellyfin/Immich, WORKLIST 6.4/6.6).
+3. `services/cloudflared/config.yml` — add `requests.nthncrtr.com →
+   http://localhost:5055` to the ingress list (before the
+   `http_status:404` catch-all). The ingress list is the
+   internet-exposure allowlist; this is its second entry.
+4. `services/jellyfin/README.md` — reframe "the one internet-exposed
+   service" → "one of two." `services/cloudflared/README.md` — reframe
+   "the public path for Jellyfin" → "the public path"; add an "adding a
+   hostname later" section.
+5. `CLAUDE.md` — rewrite safety rule 8 to "Jellyfin and Seerr are the
+   internet-exposed services; the cloudflared ingress list is the
+   allowlist." Update the natto architecture row, the
+   Cloudflare-proxied-CNAME note, and the Pi-hole split-horizon override
+   list to include `requests.nthncrtr.com`.
+6. `deploy.sh` — `deploy_seerr` mirrors the *arr pattern (ensure dirs,
+   install compose, `ensure_arrnet`, `compose_up`, verify localhost
+   endpoint). Two Seerr-specific deviations: `/srv/seerr/config` chowned
+   `1000:1000` (the `node` UID in the GHCR image, NOT the linuxserver
+   PUID=nthncrtr pattern); verify URL is the `/api/v1/settings/public`
+   endpoint the in-container healthcheck uses. Default-on, ordered
+   after `jellyfin` and the *arrs.
+
+**Operator one-time setup (interactive — out of `deploy.sh`'s scope):**
+1. **Cloudflare DNS CNAME** `requests.nthncrtr.com → <tunnel-uuid>.cfargotunnel.com`
+   (proxied / orange-cloud). From a machine with cloudflared logged in:
+   `cloudflared tunnel route dns play requests.nthncrtr.com`.
+2. **Pi-hole local-DNS override** for inside clients —
+   `192.168.1.50 requests.nthncrtr.com` via the v6 UI (Settings → Local
+   DNS Records); auto-reloads, no DNS outage. Without this, inside
+   clients hairpin through Cloudflare.
+3. **Cloudflare WAF Rate-Limiting rule** in the dashboard parallel to
+   Jellyfin's: match URI path `/api/v1/auth/jellyfin` method `POST`,
+   ~5 req/min per IP → managed-challenge ~10 min. Dashboard state, not
+   in repo (same class as the Jellyfin WAF rule).
+4. **`sudo ./deploy.sh seerr cloudflared caddy`** on natto. Then browse
+   to `https://requests.nthncrtr.com` and complete the first-run wizard:
+   sign in with the Jellyfin admin (server URL
+   `http://host.docker.internal:8096`), add Sonarr
+   (`http://sonarr:8989`, root folder `/mnt/media/video/tv`), add Radarr
+   (`http://radarr:7878`, root folder `/mnt/media/video/movies`). Leave
+   request-approval policy at the default (admin approves) — per-user
+   auto-approve quotas can be granted later from
+   Users → ⋯ → Edit User → Permissions.
+
+**Success criteria:**
+- `https://requests.nthncrtr.com` resolves Cloudflare-proxied from
+  outside the network and serves Seerr; inside clients resolve via
+  Pi-hole to natto's LAN IP and reach Seerr through Caddy without
+  hairpinning Cloudflare.
+- An existing Jellyfin user can sign in to Seerr with their Jellyfin
+  credentials (no separate Seerr account creation).
+- A test request from Seerr surfaces in the matching *arr (added to its
+  list, search starts), and a known torrent grabbed through qBit
+  appears as expected in Jellyfin's library.
+- `docker logs seerr` is clean (no reconnect storms to Sonarr/Radarr,
+  no Jellyfin sync failures); the in-container healthcheck stays
+  healthy.
+- Cloudflare WAF Rate-Limiting rule is in place and tested (rapid
+  failed-login attempts from a single IP trigger the
+  managed-challenge).
+
+**Rollback:** four discrete layers; each independent (zero impact on
+Jellyfin or the *arrs):
+1. Remove `requests.nthncrtr.com` from
+   `services/cloudflared/config.yml`; mirror the edit on natto's
+   `/srv/cloudflared/config.yml`; `sudo docker restart cloudflared`.
+   De-exposes the public path immediately.
+2. Delete the `requests.nthncrtr.com` block from
+   `services/caddy/Caddyfile`; `sudo ./deploy.sh caddy` (adapt-gated).
+   Inside path drops.
+3. `cd /srv/seerr && docker compose down`. `/srv/seerr/config/` can be
+   archived from the next backup tarball if state retention is wanted,
+   then `rm -rf`'d.
+4. Cloudflare dashboard: delete the `requests.nthncrtr.com` CNAME and
+   the WAF Rate-Limiting rule. Pi-hole: remove the local-DNS override.
+
+**Outcome:** _Pending operator activation._ Repo plumbing committed in
+this mission's series (services/seerr/, Caddy block, cloudflared
+ingress, Jellyfin + cloudflared README reframings, CLAUDE.md safety
+rule 8, deploy.sh `deploy_seerr`). Goes live once the operator does the
+four-step Cloudflare/Pi-hole/wizard activation above and runs
+`sudo ./deploy.sh seerr cloudflared caddy` on natto.
+
 ## Phase 7 — Housekeeping
 
 ### 7.1 Rename Navidrome `natto.nthncrtr.com` → `music.nthncrtr.com`  [DONE — repo; operator Pi-hole step pending]

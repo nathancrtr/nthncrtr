@@ -1,0 +1,64 @@
+# Seerr — request manager for the public Jellyfin (services/jellyfin).
+# Friends log in with Jellyfin credentials, browse/search, request titles;
+# Seerr pushes the request to Sonarr/Radarr → existing pipeline grabs it →
+# Jellyfin serves it. Managed by deploy.sh (sudo ./deploy.sh seerr).
+#
+# Reachability: public at https://requests.nthncrtr.com via the SAME
+# Cloudflare Tunnel that exposes Jellyfin (services/cloudflared). The
+# tunnel ingress list (config.yml) is the allowlist; nothing else on natto
+# is reachable from the internet. Inside clients use Caddy + Pi-hole
+# split-horizon, same pattern as play.nthncrtr.com. NO Authelia (Seerr has
+# native mobile apps; forward_auth would break them, same reasoning as
+# Jellyfin/Immich — WORKLIST 6.4/6.6). The gate is Jellyfin SSO + a
+# Cloudflare WAF rate-limit rule on the login path (dashboard state, not
+# in repo — like the Jellyfin WAF rule).
+#
+# Networking:
+#   - 127.0.0.1:5055 only — the sole intended path is requests.nthncrtr.com →
+#     Caddy (inside) or cloudflared (outside), both of which reach
+#     localhost. A 0.0.0.0 publish would be a LAN-direct path that bypasses
+#     the WAF gate. Same reasoning as the *arrs (safety rule 9).
+#   - arrnet → Sonarr/Radarr by container name (http://sonarr:8989,
+#     http://radarr:7878). Shared external network created by deploy.sh's
+#     ensure_arrnet; matches the pattern in services/sonarr/docker-compose.yml.
+#   - host.docker.internal:8096 → Jellyfin. Works here (unlike for the
+#     *arrs/qBit per safety rule 9 ¶2) because Jellyfin is network_mode:
+#     host and listens on all addresses — the bridge gateway path reaches
+#     it.
+#
+# Data: /srv/seerr/config holds Seerr's SQLite DB + settings. Internal
+# ext4 (SQLite needs POSIX locking — same reasoning as Jellyfin/Nextcloud).
+# Nightly /srv backup picks it up. No /mnt/media binds — Seerr is metadata
+# only and never touches files.
+#
+# Image runs as UID 1000 (node user) by default; deploy.sh chowns the
+# config dir to 1000:1000. No PUID/PGID env vars (not a linuxserver image).
+services:
+  seerr:
+    image: ghcr.io/seerr-team/seerr:latest
+    container_name: seerr
+    init: true
+    environment:
+      - TZ=America/New_York
+      - LOG_LEVEL=info
+    volumes:
+      - ./config:/app/config
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    networks:
+      - default
+      - arrnet
+    ports:
+      - "127.0.0.1:5055:5055"
+    healthcheck:
+      test: wget --no-verbose --tries=1 --spider http://localhost:5055/api/v1/settings/public || exit 1
+      start_period: 20s
+      timeout: 3s
+      interval: 15s
+      retries: 3
+    restart: unless-stopped
+
+networks:
+  default:
+  arrnet:
+    external: true

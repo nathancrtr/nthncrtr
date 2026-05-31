@@ -149,8 +149,17 @@ burned-in output is correct SDR. OpenCL needs the Intel compute runtime,
 which the lscr image does **not** ship (it carries only an unusable
 `nvidia.icd`) — so the compose installs `intel-opencl-icd` at container start
 via `DOCKER_MODS=linuxserver/mods:universal-package-install` (see
-`docker-compose.yml`). Verify the runtime: `docker exec jellyfin clinfo -l`
-should list the Intel platform once the mod has run.
+`docker-compose.yml`). Verify the runtime once the mod has run: an Intel ICD
+is registered (`docker exec jellyfin ls /etc/OpenCL/vendors/` shows
+`intel.icd`) and the tonemap filter actually executes —
+
+```sh
+docker exec jellyfin /usr/lib/jellyfin-ffmpeg/ffmpeg -v error \
+  -init_hw_device opencl=ocl -filter_hw_device ocl \
+  -f lavfi -i color=c=red:s=256x256:d=0.2 \
+  -vf "format=p010,setparams=color_primaries=bt2020:color_trc=smpte2084:colorspace=bt2020nc,hwupload,tonemap_opencl=t=bt709:p=bt709:m=bt709:tonemap=hable:format=nv12,hwdownload,format=nv12" \
+  -f null -    # exits 0 with no output = OpenCL PQ->SDR tonemap works
+```
 
 > The real win for HDR + subtitles is **avoiding burn-in entirely** with
 > text (SRT/ASS) subtitles, which the client renders itself so the video

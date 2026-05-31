@@ -1,0 +1,78 @@
+# Bazarr — automatic subtitle downloader for the Sonarr/Radarr libraries.
+# Managed by deploy.sh (sudo ./deploy.sh bazarr).
+#
+# WHY this exists: it's the real fix for "subtitles break HDR on the TV".
+# Image subtitles (PGS, the kind on Blu-ray/UHD remuxes) can't be sent to a
+# client as text, so Jellyfin burns them into the picture — forcing a full
+# 4K HDR transcode (heavy + the HDR→SDR tonemap is the fragile part; see
+# services/jellyfin/README.md § HDR tone-mapping). TEXT subtitles (SRT/ASS)
+# are rendered by the client itself, so the video DIRECT-PLAYS with HDR
+# intact and near-zero CPU. Bazarr fetches SRTs for the library so you can
+# pick a text track instead of the embedded PGS one. Burn-in becomes the rare
+# fallback (PGS-only releases) rather than the default.
+#
+# Before first run on natto (deploy.sh handles dirs idempotently, but for
+# manual bring-up):
+#   mkdir -p /srv/bazarr/config
+#   docker compose -f /srv/bazarr/docker-compose.yml up -d
+#   # Then in the WebUI (https://bazarr.nthncrtr.com — behind Authelia):
+#   #   Settings → Sonarr:  Address host=sonarr  port=8989  + Sonarr API key
+#   #   Settings → Radarr:  Address host=radarr  port=7878  + Radarr API key
+#   #     (both reachable by container name over arrnet — see networks below)
+#   #   Settings → Languages: enabled languages + a Languages Profile, then
+#   #     assign it to the Sonarr/Radarr shows/movies so Bazarr searches.
+#   #   Settings → Subtitles: providers (e.g. OpenSubtitles.com account).
+#   #   Settings → General → Security → Authentication = None  (see Ports).
+#
+# Subtitles land as SIDECAR files next to each video — e.g.
+#   /mnt/media/video/movies/<Movie>/<Movie>.en.srt — which is why /mnt/media
+# is mounted READ-WRITE here (same as the *arrs, which import into it). These
+# are additive text files, not edits to the media; safety rule 3 (no
+# destructive ops on /mnt/media) is unaffected.
+#
+# mem_limit: 512m — same deliberate bound as the *arrs on this shared hub.
+#   Bazarr idles low; the cap protects co-resident services.
+#
+# Ports:
+#   6767 — WebUI (matches the Caddyfile bazarr.nthncrtr.com block)
+services:
+  bazarr:
+    image: lscr.io/linuxserver/bazarr:latest
+    container_name: bazarr
+    environment:
+      - PUID=1000
+      - PGID=1000
+      - TZ=America/New_York
+    volumes:
+      - ./config:/config
+      # Read-WRITE: Bazarr writes sidecar .srt files next to the videos. The
+      # same /mnt/media tree the *arrs already write to (they import here).
+      - /mnt/media:/mnt/media
+    networks:
+      # default = bazarr's own net (bazarr_default).
+      # arrnet = the shared *arr net (ensure_arrnet, external). Bazarr reaches
+      # Sonarr/Radarr by container name over it — http://sonarr:8989 /
+      # http://radarr:7878 — exactly how Prowlarr reaches the *arrs. Bazarr
+      # talks ONLY to the *arrs (not qBit/gluetun), so it does NOT join
+      # qbittorrent_default the way Sonarr/Radarr do.
+      - default
+      - arrnet
+    ports:
+      # 127.0.0.1 only — the same web-admin-tier posture as the *arrs (safety
+      # rule 9). The sole intended path is bazarr.nthncrtr.com → Caddy (native
+      # on natto, so localhost) → Authelia forward_auth. Bazarr has no *arr
+      # `External` auth mode; its equivalent is Settings → Security →
+      # Authentication = None, which is only safe BECAUSE this port is
+      # loopback-bound and Authelia fronts it. A 0.0.0.0 publish would be an
+      # unauthenticated LAN-direct open door — do not "fix" it back. Bazarr's
+      # API key still guards /api.
+      - "127.0.0.1:6767:6767"
+    restart: unless-stopped
+    mem_limit: 512m
+
+networks:
+  default:
+  # Shared *arr-stack net (Prowlarr ↔ *arrs ↔ Bazarr). Created idempotently
+  # by deploy.sh ensure_arrnet; external here so the compose `up` expects it.
+  arrnet:
+    external: true

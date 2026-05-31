@@ -73,6 +73,14 @@ prowlarr.nthncrtr.com {
 	reverse_proxy 127.0.0.1:9696
 }
 
+# Subtitle downloader (feeds SRTs to the Sonarr/Radarr libraries so video
+# direct-plays with subtitles instead of forcing a burn-in transcode).
+# Web-admin tier like the *arrs: Authelia + 127.0.0.1-only publish.
+bazarr.nthncrtr.com {
+	import authelia
+	reverse_proxy 127.0.0.1:6767
+}
+
 # Coffee roasting app — roaster-web on kvass:8080 (kvass = 100.65.46.92,
 # stable per-node Tailscale IP; see the header note on why not the name).
 starmaya.nthncrtr.com {

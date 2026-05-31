@@ -1475,3 +1475,81 @@ note. The tile splits the goal: its `href` opens Memos' own one-box capture
 `notes.nthncrtr.com` vhost from the Caddyfile + the Memos tile from
 `services.yaml` and redeploy `caddy`/`homepage`; delete the Cloudflare
 `notes` A record. `/srv/memos/data` can be kept (harmless) or removed.
+
+## Phase 10 — Subtitle automation (Bazarr) + Jellyfin HDR-subtitle fix
+
+### 10.1 Bazarr — text subtitles so HDR video direct-plays  [SCAFFOLDED — deploy pending operator]
+
+**Goal:** Eliminate the "subtitles break HDR + lag the TV" problem at its
+root. Diagnosed 2026-05-31: turning on a subtitle for a 4K HDR remux forced a
+burn-in transcode because the only subtitle tracks are **PGS** (image subs);
+that transcode (a) pushed the iGPU + ~68 Mbps H.264 over the TV's WiFi
+(sluggish) and (b) shipped HDR pixels mislabeled as SDR (washed-out colors —
+VPP tonemap silently dropped in the `overlay_qsv` path). Two-part fix:
+**(A)** Jellyfin tonemap repair (shipped, below) so forced PGS burn-in at
+least looks correct; **(B)** Bazarr (this mission) auto-downloads **text**
+SRTs so the client renders subs itself and the video DIRECT-PLAYS with HDR
+intact — burn-in becomes the rare PGS-only fallback.
+
+**Part A — Jellyfin OpenCL tonemap  [DONE — 430a7e9, 052cae7; deployed +
+verified on natto 2026-05-31]:**
+- Switched HDR tone-mapping VPP → OpenCL (`encoding.xml`
+  `EnableTonemapping=true` / `EnableVppTonemapping=false`, runtime config on
+  natto): OpenCL composes with subtitle `overlay`, VPP drops it.
+- The lscr Jellyfin image ships no Intel OpenCL ICD (only an unusable
+  `nvidia.icd`), so `services/jellyfin/docker-compose.yml` installs
+  `intel-opencl-icd` at start via
+  `DOCKER_MODS=linuxserver/mods:universal-package-install`.
+- Verified: Intel ICD registered + `tonemap_opencl` PQ→BT.709 runs clean on
+  the Alder Lake-N iGPU; Jellyfin healthy. See `services/jellyfin/README.md`.
+
+**Part B — Bazarr repo plumbing (this mission's scaffolding — shipped):**
+1. `services/bazarr/` — `docker-compose.yml` (image
+   `lscr.io/linuxserver/bazarr:latest`, PUID/PGID 1000, port
+   `127.0.0.1:6767:6767`, `/mnt/media` mounted **rw** for SRT sidecars,
+   networks `default` + `arrnet`, `mem_limit 512m`) + `README.md`.
+2. `services/caddy/Caddyfile` — `bazarr.nthncrtr.com` block (`import
+   authelia` + `reverse_proxy 127.0.0.1:6767`), web-admin tier like the *arrs.
+3. `deploy.sh` — `deploy_bazarr` (mirrors `deploy_radarr`: ensure dirs,
+   `ensure_arrnet`, `compose_up`, verify URL) + `bazarr` added to the default
+   service list and usage/header doc lists.
+
+**Auth model:** web-admin tier (safety rule 9). Bazarr has no *arr `External`
+mode; equivalent is **Settings → Security → Authentication = None**, safe only
+because the port is loopback-bound and Authelia fronts it. Not in the
+cloudflared ingress → **not internet-exposed** (safety rule 8 untouched).
+
+**Operator steps to activate (not in repo):**
+- `sudo ./deploy.sh bazarr` (from `/srv/nthncrtr-repo` after `git pull`).
+- Cloudflare **A record** `bazarr / 100.122.71.33 / DNS only` — without it the
+  name doesn't resolve even though Caddy serves it. (Inside clients resolve
+  via Pi-hole forwarding the zone; add a Pi-hole local override only if you
+  want LAN-direct, like `music`/`play`.)
+- `sudo ./deploy.sh caddy` (after the A record) → `https://bazarr.nthncrtr.com`
+  reachable on the tailnet via Authelia.
+- In Bazarr: connect Sonarr (`sonarr:8989`) + Radarr (`radarr:7878`) with API
+  keys; create a Languages Profile and assign it to the library; add subtitle
+  providers; set Authentication = None. (See `services/bazarr/README.md`.)
+- On the TV: select the **SRT (External)** track, not the PGS one.
+
+**Success criteria:** `https://bazarr.nthncrtr.com` loads behind Authelia;
+Sonarr/Radarr tests green; SRTs appear as `.srt` sidecars under
+`/mnt/media/video/...`; the LG Jellyfin player lists an external SRT track and
+playing it stays **direct-play** (no transcode in Jellyfin's playback stats),
+HDR intact.
+
+**Known follow-ups (not in 10.1):**
+- **Homepage widget:** no Bazarr tile yet. Bazarr has a Homepage widget
+  (needs its API key on `bazarr_default`, like the other *arr tiles) — add
+  when convenient.
+- **Backups:** `/srv/bazarr/config` is under `/srv` so the nightly tarball
+  already covers it; no extra wiring needed.
+
+**Rollback:** `cd /srv/bazarr && docker compose down`; remove the
+`bazarr.nthncrtr.com` vhost from the Caddyfile and `deploy_bazarr` + the
+`bazarr` list entries from `deploy.sh`, redeploy `caddy`; delete the
+Cloudflare `bazarr` A record. SRT sidecars under `/mnt/media` are harmless
+text and can be left. Part A (Jellyfin OpenCL tonemap) is independent — to
+unwind it, revert `encoding.xml` to `EnableVppTonemapping=true` /
+`EnableTonemapping=false` and drop the `DOCKER_MODS` lines from the Jellyfin
+compose.

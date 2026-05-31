@@ -11,8 +11,8 @@
 # One-time bootstrap (not handled here): git clone this repo to
 # /srv/nthncrtr-repo and put a read-only deploy key at /root/.ssh/.
 #
-# Services: caddy navidrome backup qbittorrent radarr sonarr prowlarr homepage nextcloud jellyfin seerr immich memos cloudflared authelia pihole starmaya
-# Default (no service args): caddy navidrome backup qbittorrent radarr sonarr prowlarr homepage nextcloud jellyfin seerr immich memos cloudflared
+# Services: caddy navidrome backup qbittorrent radarr sonarr prowlarr bazarr homepage nextcloud jellyfin seerr immich memos cloudflared authelia pihole starmaya
+# Default (no service args): caddy navidrome backup qbittorrent radarr sonarr prowlarr bazarr homepage nextcloud jellyfin seerr immich memos cloudflared
 #   — homepage is AFTER the *arrs/qBittorrent on purpose: its widgets reach
 #     them over those compose projects' (external) docker networks, which
 #     only exist once those projects have come up. Steady-state re-deploys
@@ -48,8 +48,8 @@ usage() {
   cat <<'EOF'
 Usage: sudo ./deploy.sh [--dry-run] [--yes-pihole] [services...]
 
-Services: caddy navidrome backup qbittorrent radarr sonarr prowlarr homepage nextcloud jellyfin seerr immich memos cloudflared pihole starmaya
-Default (no service args): caddy navidrome backup qbittorrent radarr sonarr prowlarr homepage nextcloud jellyfin seerr immich memos cloudflared
+Services: caddy navidrome backup qbittorrent radarr sonarr prowlarr bazarr homepage nextcloud jellyfin seerr immich memos cloudflared pihole starmaya
+Default (no service args): caddy navidrome backup qbittorrent radarr sonarr prowlarr bazarr homepage nextcloud jellyfin seerr immich memos cloudflared
 EOF
   exit "${1:-0}"
 }
@@ -67,7 +67,7 @@ done
 
 SERVICES=("$@")
 if [[ ${#SERVICES[@]} -eq 0 ]]; then
-  SERVICES=(caddy navidrome backup qbittorrent radarr sonarr prowlarr homepage nextcloud jellyfin seerr immich memos cloudflared)
+  SERVICES=(caddy navidrome backup qbittorrent radarr sonarr prowlarr bazarr homepage nextcloud jellyfin seerr immich memos cloudflared)
   (( YES_PIHOLE )) && SERVICES+=(pihole)
 fi
 
@@ -356,6 +356,21 @@ deploy_prowlarr() {
   compose_up prowlarr
   sleep 3
   verify_url https://prowlarr.nthncrtr.com 200 || true
+}
+
+deploy_bazarr() {
+  log "bazarr"
+  local CHANGED=0
+  (( DRY_RUN )) || {
+    [[ -d /srv/bazarr ]]        || { install -d -o nthncrtr -g nthncrtr -m 0755 /srv/bazarr;        note "created /srv/bazarr"; }
+    [[ -d /srv/bazarr/config ]] || { install -d -o nthncrtr -g nthncrtr -m 0755 /srv/bazarr/config; note "created /srv/bazarr/config"; }
+  }
+  install_file "$REPO_ROOT/services/bazarr/docker-compose.yml" /srv/bazarr/docker-compose.yml
+  (( DRY_RUN )) && return 0
+  ensure_arrnet
+  compose_up bazarr
+  sleep 3
+  verify_url https://bazarr.nthncrtr.com 200 || true
 }
 
 deploy_nextcloud() {

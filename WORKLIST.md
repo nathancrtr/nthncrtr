@@ -1407,3 +1407,71 @@ in-EU.
 repo, `sudo ./deploy.sh qbittorrent`. Same caveat as any qBit stack
 recreate: in-flight *arr grabs without metadata get orphaned and need
 Wanted→Missing re-trigger (per `services/qbittorrent/README.md`).
+
+## Phase 9 — Self-hosted note-taking (Memos)
+
+### 9.1 Memos — quick-capture notes + Homepage recent-notes widget  [SCAFFOLDED — deploy pending operator]
+
+Stand up [Memos](https://www.usememos.com/) on natto: a lightweight,
+single-container (Go + embedded SQLite) note-taking / quick-capture app —
+the "what's on your mind?" box with a feed of recent notes. Operator goal:
+add notes quickly and see snippets of the most recent ones from a Homepage
+tile. Operator decisions (2026-05-31): subdomain `notes.nthncrtr.com`;
+tailnet-only (Caddy, like Immich/Nextcloud); Homepage `customapi`
+recent-notes widget wired now (not just a link tile).
+
+**Homepage-widget reality (why the design is what it is):** Homepage has no
+persistent storage and won't host a text input, so no widget can *create* a
+note. The tile splits the goal: its `href` opens Memos' own one-box capture
+(the "add" path), and a `customapi` `dynamic-list` widget reads
+`GET /api/v1/memos` to show recent snippets (the "view" path).
+
+**Preconditions:**
+- Repo `git status` clean.
+- Port `5230` free on natto (Memos default; not among the in-use set 8080/
+  8081/8053/8096/4533/3000/2283/5055).
+- No `*.nthncrtr.com` wildcard — a new `notes` A record → `100.122.71.33`,
+  DNS-only, must be added in the Cloudflare dashboard before the name
+  resolves (operator step below). Don't query the name first (Pi-hole
+  negative-caches NXDOMAIN ~30 min).
+
+**Repo changes (this entry — done):**
+- `services/memos/`: `docker-compose.yml` (single `neosmemo/memos:0.29.0`
+  container, `0.0.0.0:5230`, `./data` on internal ext4, **no secrets.env**),
+  `README.md`.
+- `services/caddy/Caddyfile`: `notes.nthncrtr.com → 127.0.0.1:5230`, **no
+  `import authelia`** (native mobile apps break behind forward_auth, same as
+  Jellyfin/Seerr/Immich — WORKLIST 6.4/6.6); tailnet-only, so safety rule 8
+  holds (Jellyfin + Seerr still the only public services; Memos is not on the
+  Cloudflare Tunnel).
+- `services/homepage/`: Memos tile (`type: customapi`, `dynamic-list` over
+  `/api/v1/memos`) + `HOMEPAGE_VAR_MEMOS_TOKEN` in `secrets.env.example`.
+- `deploy.sh`: `deploy_memos` (+ default/usage lists); creates `/srv/memos/
+  data`, probes `:5230/healthz`.
+- `CLAUDE.md`: architecture/repo-layout updated.
+
+**Success criteria (deployment — pending operator):**
+- `sudo ./deploy.sh memos` brings up the `memos` container;
+  `curl -fsS http://127.0.0.1:5230/healthz` → 200.
+- Cloudflare `notes` A record added (A / notes / 100.122.71.33 / DNS only)
+  — without it the name does not resolve even though Caddy serves it.
+- `sudo ./deploy.sh caddy` (after) → `https://notes.nthncrtr.com` reachable
+  on the tailnet; first sign-up creates the Host account.
+- Access token minted (Settings → Access Tokens), written to
+  `/srv/homepage/secrets.env` as `HOMEPAGE_VAR_MEMOS_TOKEN`, then
+  `sudo ./deploy.sh homepage` → the recent-notes tile renders snippets.
+
+**Known follow-ups (not in 9.1):**
+- **customapi version fragility:** the widget mapping assumes the v0.29
+  `/api/v1/memos` shape (`{"memos":[{content,displayTime}]}`). A Memos
+  upgrade that reshapes the endpoint will blank the tile — re-verify the
+  response and adjust mappings (services/memos/README.md § caveat). The
+  pinned image tag exists to make that a deliberate, not silent, event.
+- **Backups:** Memos is not yet wired into `services/backup`. `/srv/memos/
+  data` is small (text + small resource uploads) and slots into the nightly
+  tarball naturally; add it when convenient.
+
+**Rollback:** `cd /srv/memos && docker compose down`; remove the
+`notes.nthncrtr.com` vhost from the Caddyfile + the Memos tile from
+`services.yaml` and redeploy `caddy`/`homepage`; delete the Cloudflare
+`notes` A record. `/srv/memos/data` can be kept (harmless) or removed.

@@ -1,0 +1,56 @@
+# Memos — lightweight, self-hosted note-taking / quick-capture (the "what's
+# on your mind?" box). Managed by deploy.sh (sudo ./deploy.sh memos).
+#
+# Topology: a single container (Go server + bundled web UI + embedded
+# SQLite). No external DB, no Redis — the whole service is one image and one
+# data dir. This is deliberately the simplest service in the fleet.
+#
+# Reachability: tailnet-only, like Nextcloud/Immich — NOT internet-exposed
+# (safety rule 8: Jellyfin + Seerr are the only public services; Memos is
+# not on the Cloudflare Tunnel). Reached three equivalent ways:
+#   https://notes.nthncrtr.com             (Caddy; resolves to natto's
+#                                            Tailscale IP via Cloudflare DNS,
+#                                            so only on the tailnet)
+#   http://natto.tailaf7ea6.ts.net:5230    (tailnet, raw)
+#   http://natto:5230                      (LAN, raw)
+# There is intentionally NO `import authelia` on the Caddy vhost: Memos ships
+# native mobile apps that break behind forward_auth, same reasoning as
+# Jellyfin/Seerr/Immich. The gate is tailnet-only reach + Memos' own per-user
+# accounts. Don't put notes.nthncrtr.com behind Authelia.
+#
+# Data layout on natto (on the Beelink's internal ext4 — NOT the exfat 5TB;
+# the embedded SQLite DB needs POSIX locking/atomic renames exfat can't give,
+# same reasoning as Nextcloud/Immich/Jellyfin):
+#   /srv/memos/data  → SQLite DB + uploaded resources (MEMOS_DATA)
+#
+# 5230 is Memos' default port (free on natto: 8080 gluetun, 8081 nextcloud,
+# 8053 pihole admin, 8096 jellyfin, 4533 navidrome, 3000 homepage, 2283
+# immich, 5055 seerr). Published on 0.0.0.0 (like Nextcloud/Immich) so the
+# tailnet/LAN raw URLs and the Homepage widget (via host.docker.internal)
+# all reach it; no Authelia means 0.0.0.0 is not an unauthenticated door
+# (Memos has its own login) — this is the Nextcloud/Immich model, NOT the
+# *arrs' 127.0.0.1 + Authelia model (safety rule 9).
+#
+# Image is pinned (not :stable / :latest): the REST API the Homepage
+# customapi widget reads has changed shape across Memos releases, so an
+# unattended `:stable` bump could silently break the recent-notes tile.
+# Bump deliberately and re-verify the widget — see services/memos/README.md.
+#
+# No secrets.env: Memos stores its users in its own SQLite DB and needs no
+# build-time secret. The Homepage widget's access token lives in
+# /srv/homepage/secrets.env (HOMEPAGE_VAR_MEMOS_TOKEN), not here.
+
+name: memos
+
+services:
+  memos:
+    image: neosmemo/memos:0.29.0
+    container_name: memos
+    ports:
+      - "5230:5230"
+    volumes:
+      - ./data:/var/opt/memos
+      - /etc/localtime:/etc/localtime:ro
+    environment:
+      - TZ=America/New_York
+    restart: unless-stopped

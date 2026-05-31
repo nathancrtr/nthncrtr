@@ -126,6 +126,34 @@
           key: '{{HOMEPAGE_VAR_IMMICH_KEY}}'
           version: 2
 
+    - Memos:
+        # Tailnet-only. href = the Caddy URL (resolves to natto's Tailscale
+        # IP — works in the browser on the tailnet, NOT internet-exposed) and
+        # is the one-click "add a note" path (Homepage can't host a text box).
+        # widget url = host.docker.internal because the homepage container
+        # can't resolve MagicDNS names and Memos publishes on 0.0.0.0:5230
+        # (same pattern as the Nextcloud/Jellyfin/Immich widgets above).
+        # No native widget type for Memos — customapi lists recent notes from
+        # the v0.29 REST API. If a Memos upgrade blanks the tile, re-check the
+        # /api/v1/memos response shape (services/memos/README.md § caveat).
+        href: https://notes.nthncrtr.com
+        icon: memos.png
+        server: my-docker
+        container: memos
+        widget:
+          type: customapi
+          url: http://host.docker.internal:5230/api/v1/memos
+          method: GET
+          headers:
+            Authorization: 'Bearer {{HOMEPAGE_VAR_MEMOS_TOKEN}}'
+          display: dynamic-list
+          mappings:
+            items: memos
+            name: content
+            label: displayTime
+            limit: 5
+            format: date
+
 - starmaya:
     - Coffee Roasting:
         href: https://starmaya.nthncrtr.com

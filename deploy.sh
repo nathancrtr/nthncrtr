@@ -11,8 +11,8 @@
 # One-time bootstrap (not handled here): git clone this repo to
 # /srv/nthncrtr-repo and put a read-only deploy key at /root/.ssh/.
 #
-# Services: caddy navidrome backup qbittorrent radarr sonarr prowlarr homepage nextcloud jellyfin seerr immich cloudflared authelia pihole starmaya
-# Default (no service args): caddy navidrome backup qbittorrent radarr sonarr prowlarr homepage nextcloud jellyfin seerr immich cloudflared
+# Services: caddy navidrome backup qbittorrent radarr sonarr prowlarr homepage nextcloud jellyfin seerr immich memos cloudflared authelia pihole starmaya
+# Default (no service args): caddy navidrome backup qbittorrent radarr sonarr prowlarr homepage nextcloud jellyfin seerr immich memos cloudflared
 #   — homepage is AFTER the *arrs/qBittorrent on purpose: its widgets reach
 #     them over those compose projects' (external) docker networks, which
 #     only exist once those projects have come up. Steady-state re-deploys
@@ -48,8 +48,8 @@ usage() {
   cat <<'EOF'
 Usage: sudo ./deploy.sh [--dry-run] [--yes-pihole] [services...]
 
-Services: caddy navidrome backup qbittorrent radarr sonarr prowlarr homepage nextcloud jellyfin seerr immich cloudflared pihole starmaya
-Default (no service args): caddy navidrome backup qbittorrent radarr sonarr prowlarr homepage nextcloud jellyfin seerr immich cloudflared
+Services: caddy navidrome backup qbittorrent radarr sonarr prowlarr homepage nextcloud jellyfin seerr immich memos cloudflared pihole starmaya
+Default (no service args): caddy navidrome backup qbittorrent radarr sonarr prowlarr homepage nextcloud jellyfin seerr immich memos cloudflared
 EOF
   exit "${1:-0}"
 }
@@ -67,7 +67,7 @@ done
 
 SERVICES=("$@")
 if [[ ${#SERVICES[@]} -eq 0 ]]; then
-  SERVICES=(caddy navidrome backup qbittorrent radarr sonarr prowlarr homepage nextcloud jellyfin seerr immich cloudflared)
+  SERVICES=(caddy navidrome backup qbittorrent radarr sonarr prowlarr homepage nextcloud jellyfin seerr immich memos cloudflared)
   (( YES_PIHOLE )) && SERVICES+=(pihole)
 fi
 
@@ -474,6 +474,27 @@ deploy_immich() {
   # 200 once the server is up. Tailnet-only — no public URL to verify here.
   verify_url http://127.0.0.1:2283/api/server/ping 200 || \
     warn "immich not answering yet — first boot runs migrations; check 'docker logs immich_server'"
+}
+
+deploy_memos() {
+  log "memos"
+  local CHANGED=0
+  (( DRY_RUN )) || {
+    # Parent + the data dir, on the internal ext4 (NOT exfat — the embedded
+    # SQLite DB needs POSIX locking/atomic renames). Created root-owned and
+    # empty; the memos image chowns its own subtree on first init.
+    # Tailnet-only; the notes.nthncrtr.com Caddyfile vhost is deployed via
+    # `deploy.sh caddy` (run it after this on first stand-up).
+    [[ -d /srv/memos ]]      || { install -d -o root -g root -m 0755 /srv/memos;      note "created /srv/memos"; }
+    [[ -d /srv/memos/data ]] || { install -d -o root -g root -m 0755 /srv/memos/data; note "created /srv/memos/data"; }
+  }
+  install_file "$REPO_ROOT/services/memos/docker-compose.yml" /srv/memos/docker-compose.yml
+  (( DRY_RUN )) && return 0
+  compose_up memos
+  sleep 3
+  # /healthz answers 200 once the server is up. Tailnet-only — no public URL.
+  verify_url http://127.0.0.1:5230/healthz 200 || \
+    warn "memos not answering yet — check 'docker logs memos'"
 }
 
 deploy_cloudflared() {

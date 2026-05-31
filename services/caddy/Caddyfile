@@ -91,6 +91,17 @@ photos.nthncrtr.com {
 	reverse_proxy 127.0.0.1:2283
 }
 
+# Memos — lightweight self-hosted note-taking / quick-capture. Tailnet-only
+# like Nextcloud/Immich: this name resolves (via Cloudflare DNS) to natto's
+# Tailscale IP, so it is NOT internet-exposed (Jellyfin + Seerr remain the
+# only public services — safety rule 8; Memos is not on the Cloudflare
+# Tunnel). Deliberately NO `import authelia`: Memos ships native mobile apps
+# that break behind forward_auth, same as Jellyfin/Seerr/Immich. The gate is
+# tailnet-only reach + Memos' own per-user accounts. See services/memos/README.md.
+notes.nthncrtr.com {
+	reverse_proxy 127.0.0.1:5230
+}
+
 # Jellyfin — the ONE internet-exposed service (operator decision, WORKLIST
 # 6.6). This block is the INSIDE-ONLY path. Read before touching:
 #

@@ -70,6 +70,21 @@ services:
       - PUID=1000
       - PGID=1000
       - TZ=America/New_York
+      # Intel OpenCL runtime for OpenCL HDR tone-mapping. Why this is needed
+      # and why NOT the iGPU-native VPP tone-mapping: VPP (QSV) tone-mapping
+      # silently DROPS the tonemap step when it has to compose with subtitle
+      # burn-in (overlay_qsv). The generated filter graph just *relabels*
+      # BT.2020/PQ as BT.709 (setparams, no real conversion), so HDR content
+      # shows washed-out/wrong colors the instant a PGS (image) subtitle is
+      # turned on — it forces a burn-in transcode (diagnosed 2026-05-31 on a
+      # 4K HDR remux). OpenCL tone-mapping composes correctly with the overlay,
+      # so burned-in output is correct SDR. The lscr image ships only an
+      # (unusable, no NVIDIA GPU here) nvidia.icd and NO Intel ICD, so the
+      # Intel runtime must be installed at container start via the universal
+      # mod. Pairs with encoding.xml EnableTonemapping=true /
+      # EnableVppTonemapping=false (runtime config, not in repo — README).
+      - DOCKER_MODS=linuxserver/mods:universal-package-install
+      - INSTALL_PACKAGES=intel-opencl-icd
       # Absolute base URL handed to clients. One clean value, no port,
       # works both ways: inside, Pi-hole split-horizon → natto LAN IP →
       # Caddy :443 → here; outside, Cloudflare Tunnel → here. See header.

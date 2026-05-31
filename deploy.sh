@@ -392,7 +392,8 @@ deploy_jellyfin() {
     # config/cache on internal ext4, owned by the UID-1000 user (the
     # container runs as PUID/PGID 1000). The media tree is bind-mounted
     # read-only from /mnt/media/video and is not created here.
-    # Tailscale-only — no Caddyfile route to deploy.
+    # Public via cloudflared (deploy_cloudflared); the inside split-horizon
+    # route lives in caddy's Caddyfile (deploy_caddy), not here.
     [[ -d /srv/jellyfin ]]        || { install -d -o nthncrtr -g nthncrtr -m 0755 /srv/jellyfin;        note "created /srv/jellyfin"; }
     [[ -d /srv/jellyfin/config ]] || { install -d -o nthncrtr -g nthncrtr -m 0755 /srv/jellyfin/config; note "created /srv/jellyfin/config"; }
     [[ -d /srv/jellyfin/cache ]]  || { install -d -o nthncrtr -g nthncrtr -m 0755 /srv/jellyfin/cache;  note "created /srv/jellyfin/cache"; }

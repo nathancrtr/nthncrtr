@@ -130,6 +130,34 @@ constrained uplink is *more* likely to force a transcode (resolution/bitrate
 down-scaling on top of the codec/HDR reasons), so verify QSV actually
 engages for a remote 4k playback, not just a LAN one.
 
+### HDR tone-mapping uses OpenCL, not VPP — because of subtitle burn-in
+
+Tone-mapping (HDR→SDR) only runs when the video is **transcoded**. The
+common trigger is **PGS (image) subtitle burn-in**: PGS subs can't be sent
+to a client as text, so Jellyfin burns them into the picture, forcing a full
+video transcode. With the iGPU-native **VPP tone-mapping**
+(`EnableVppTonemapping`), that burn-in path is broken: when the tonemap has
+to compose with the subtitle `overlay_qsv` filter, Jellyfin's graph silently
+**drops the tonemap** and just *relabels* BT.2020/PQ as BT.709 (`setparams`,
+no real conversion). The still-HDR pixels then display as SDR → washed-out,
+wrong colors the instant you turn a subtitle on (diagnosed 2026-05-31 on a 4K
+HDR remux; the direct-play and no-subtitle transcode paths were unaffected).
+
+The fix is **OpenCL tone-mapping** (`EnableTonemapping=true`,
+`EnableVppTonemapping=false`), which composes correctly with the overlay, so
+burned-in output is correct SDR. OpenCL needs the Intel compute runtime,
+which the lscr image does **not** ship (it carries only an unusable
+`nvidia.icd`) — so the compose installs `intel-opencl-icd` at container start
+via `DOCKER_MODS=linuxserver/mods:universal-package-install` (see
+`docker-compose.yml`). Verify the runtime: `docker exec jellyfin clinfo -l`
+should list the Intel platform once the mod has run.
+
+> The real win for HDR + subtitles is **avoiding burn-in entirely** with
+> text (SRT/ASS) subtitles, which the client renders itself so the video
+> direct-plays with HDR intact — that's what Bazarr (auto SRT download) is
+> for. OpenCL tone-mapping is the *fallback* for PGS-only releases where
+> burn-in is unavoidable.
+
 ### The config is NOT in this repo — it must be re-applied on a rebuild
 
 QSV lives in `/srv/jellyfin/config/encoding.xml` (runtime config, not
@@ -138,13 +166,16 @@ brings it back — but a **from-scratch natto rebuild without a backup restore
 silently reverts to software transcoding** (the buffering returns). After
 any such rebuild, re-apply via **Dashboard → Playback → Transcoding** (set
 HW accel = *Intel QuickSync (QSV)*, QSV device `/dev/dri/renderD128`, enable
-VPP tone-mapping, add `hevc`/`vp9`/`av1` to HW decode codecs, save), or edit
-`encoding.xml` directly. The keys that matter (verified working 2026-05-16):
+**Tone mapping** (OpenCL) and *disable* VPP tone mapping — see the section
+above for why, add `hevc`/`vp9`/`av1` to HW decode codecs, save), or edit
+`encoding.xml` directly. The keys that matter (QSV verified 2026-05-16;
+OpenCL tonemap 2026-05-31):
 
 ```xml
 <HardwareAccelerationType>qsv</HardwareAccelerationType>
 <QsvDevice>/dev/dri/renderD128</QsvDevice>
-<EnableVppTonemapping>true</EnableVppTonemapping>          <!-- HDR→SDR on the iGPU -->
+<EnableTonemapping>true</EnableTonemapping>               <!-- OpenCL HDR→SDR; composes with subtitle burn-in -->
+<EnableVppTonemapping>false</EnableVppTonemapping>        <!-- VPP drops the tonemap when burning in subs -->
 <EnableIntelLowPowerH264HwEncoder>true</EnableIntelLowPowerH264HwEncoder>
 <EnableIntelLowPowerHevcHwEncoder>true</EnableIntelLowPowerHevcHwEncoder>
 <HardwareDecodingCodecs> h264, hevc, vc1, vp9, av1 </HardwareDecodingCodecs>

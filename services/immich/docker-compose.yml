@@ -28,16 +28,16 @@
 # 6.4/6.6). The gate is Immich's own per-user accounts + tailnet-only reach.
 # Don't put photos.nthncrtr.com behind Authelia.
 #
-# Data layout on natto (ALL on the Beelink's internal ext4 — NOT the exfat
-# 5TB; Immich's postgres + upload library need POSIX ownership/locking/atomic
-# renames exfat can't give, same reasoning as Nextcloud/Jellyfin):
+# Data layout on natto (ALL on the Beelink's internal SSD — NOT the bulk 5TB
+# media drive; Immich's postgres + upload library are live service state and
+# belong on the /srv SSD tier, see runbooks/media-layout.md § "Storage model"):
 #   /srv/immich/library  → the photo/video library (UPLOAD_LOCATION)
 #   /srv/immich/db       → postgres datadir
 # CAPACITY CAVEAT: /srv had ~130 GB free when this was set up. A full Google
 # Photos archive can exceed that. Watch `df -h /` during/after the import; if
 # the archive is large this library may have to move to dedicated storage
-# (exfat is NOT a safe target for it — see README). This is a known,
-# accepted-for-now risk recorded in WORKLIST 7.1.
+# (/mnt/media is the bulk-media tier, not sized/intended for it — see README).
+# This is a known, accepted-for-now risk recorded in WORKLIST 7.1.
 #
 # 2283 is Immich's server port (free on natto: 8080 gluetun, 8081 nextcloud,
 # 8053 pihole admin, 8096 jellyfin, 4533 navidrome, 3000 homepage). Published

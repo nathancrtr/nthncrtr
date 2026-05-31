@@ -20,12 +20,10 @@ MariaDB, Redis (transactional file locking), and a cron sidecar.
 
 ### Why internal disk, not the 5TB
 
-Nextcloud's data dir and the MariaDB datadir need POSIX ownership, locking
-and atomic renames. The 5TB drive is **exfat by design** (it physically
-moves between hosts UUID-stable — see `runbooks/migrate-natto.md`) and exfat
-gives none of that. Drive content is < 50 GB, which fits the Beelink's
-internal ext4 with room to spare. This is the resolved outcome of the
-hardware discussion in WORKLIST mission 5.1.
+Nextcloud's data dir and MariaDB datadir are live service state, so they sit on
+natto's SSD (`/srv/nextcloud/`) per the repo-wide storage split — see
+`runbooks/media-layout.md` § "Storage model". Content is < 50 GB, well within
+the SSD. This is the resolved outcome of the hardware discussion in WORKLIST 5.1.
 
 ### Why no Caddy / Cloudflare route
 

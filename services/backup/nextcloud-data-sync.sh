@@ -44,7 +44,7 @@ mkdir -p "$DEST_DIR"
 # Trailing slash on SRC: copy the dir's *contents* into DEST_DIR.
 # --delete so the mirror tracks deletions (it's a mirror, not an archive).
 # -H preserves hardlinks Nextcloud may use; --numeric-ids keeps the www-data
-# UID stable across the exfat boundary.
+# UID stable across the /srv → /mnt/media copy (both ext4).
 rsync -aH --delete --numeric-ids --info=stats2 "$SRC/" "$DEST_DIR/"
 
 echo "[nextcloud-data-sync] mirror updated: $DEST_DIR"

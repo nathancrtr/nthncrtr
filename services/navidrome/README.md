@@ -14,7 +14,7 @@ Music streaming server, scans music from the 5TB drive, serves a web UI + Subson
 | Public URL | `https://music.nthncrtr.com` |
 | Internal port | 4533 |
 
-The container runs as `1000:1000` (the natto operator's UID/GID). `/mnt/media` is exfat, mounted with `uid=1000`, so file ownership inside the music dir matches.
+The container runs as `1000:1000` (the natto operator's UID/GID). `/mnt/media` is ext4, and its `music/` subdir is `chown`ed to `nthncrtr:nthncrtr` (uid/gid 1000) on-disk, so file ownership inside the music dir matches. (The mount is read-only here, so this only matters for the host-side writes that populate it.)
 
 ## Operating
 

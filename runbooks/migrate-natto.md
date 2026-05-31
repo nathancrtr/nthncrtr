@@ -11,6 +11,8 @@ This is the first cross-arch run. The old natto is a Raspberry Pi (arm64); the n
 
 The 5TB USB drive is exfat (cross-platform, cross-arch). It physically unplugs from the Pi and replugs into the Beelink. Its UUID stays the same so the existing `/etc/fstab` line is portable.
 
+> ⚠️ **STALE since 2026-05-20.** This runbook describes the drive as it was *during* the 2026-05-16 migration (exfat). It was reformatted **exfat → ext4 on 2026-05-20** (`runbooks/reformat-mnt-media-to-ext4.sh`); current state is `UUID=3d0d41ab-bb04-418d-a2b4-2afde44a3e50 /mnt/media ext4 defaults,noatime,nodiratime 0 2`. The exfat fstab line and "the existing line is portable" assumption in § 5 below are no longer correct, and a from-scratch rebuild now has to decide between *reformatting the new drive to ext4 + restoring media from backup* vs *preserving the already-ext4 drive*. **This section needs a rewrite before the next migration** — see CLAUDE.md § `/mnt/media` and `runbooks/media-layout.md` § "Storage model".
+
 ### Host already prepared on 2026-05-16 (read this before § 1)
 
 The Beelink was racked, Ubuntu Server installed, and networked in a prior
@@ -137,6 +139,8 @@ ls /mnt/media   # should be empty
 ```
 
 Physically unplug the USB drive from the Pi and plug it into the Beelink. On the new host:
+
+> ⚠️ **The exfat UUID/line below is STALE** — the drive was reformatted to ext4 on 2026-05-20. The current line is `UUID=3d0d41ab-bb04-418d-a2b4-2afde44a3e50 /mnt/media ext4 defaults,noatime,nodiratime 0 2`. See the warning at the top of this file before following these steps.
 
 ```sh
 # /etc/fstab on the new host needs the same line as old natto:

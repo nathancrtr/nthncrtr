@@ -1,6 +1,8 @@
 # /mnt/media layout
 
-Decision record for how the 5TB drive is organized. Lives at `/mnt/media` on natto (exfat, owner uid=1000).
+Decision record for how the 5TB drive is organized, plus the canonical
+storage-model and hardlink notes the service READMEs point back to. Lives at
+`/mnt/media` on natto (**ext4** — see § Mount details).
 
 ## Target layout
 
@@ -11,7 +13,7 @@ Decision record for how the 5TB drive is organized. Lives at `/mnt/media` on nat
                     but Navidrome doesn't see them, so the same album in three
                     formats doesn't triple in the library. See
                     tools/orpheus/upload/README.md for the upload pipeline.
-├── video/        — placeholder for future Jellyfin / video content
+├── video/        — movies/ + tv/, served read-only by Jellyfin (see § Jellyfin)
 ├── backups/      — natto-YYYY-MM-DD.tgz, written by services/backup
 └── _unsorted/    — junk that landed on the drive over time (installer
                     artifacts, Seagate factory files, *arr installers, etc.)
@@ -30,9 +32,41 @@ Subdirectories of `_unsorted/`:
 
 ## Mount details
 
-- Filesystem: **ext4** (`/dev/sda2`), mounted with default options (`rw,noatime,nodiratime`) per `/etc/fstab`. The drive was reformatted ext4 during the 2026-05-16 natto migration — the original Pi-era setup was exfat with `uid=1000,gid=1000` mount options, but ext4 + per-dir chown is now the model.
+- Filesystem: **ext4** (`/dev/sda2`, `UUID=3d0d41ab-bb04-418d-a2b4-2afde44a3e50`), mounted `defaults,noatime,nodiratime` per `/etc/fstab`. The drive was reformatted exfat → ext4 on **2026-05-20** (`runbooks/reformat-mnt-media-to-ext4.sh`), *after* the 2026-05-16 host migration — the original Pi-era setup was exfat with `uid=1000,gid=1000` mount options, but ext4 + per-dir chown is now the model.
 - The mount root `/mnt/media` itself is owned `root:root`. Each top-level service subdir (`music/`, `seed-only/`, `video/`, `backups/`, `_unsorted/`) is `chown`ed to `nthncrtr:nthncrtr` at creation, so day-to-day operations (rsync from workhorse, qBit writes, etc.) don't need root. **Adding a new top-level subdir requires sudo**: `sudo mkdir -p /mnt/media/<new> && sudo chown nthncrtr:nthncrtr /mnt/media/<new>` (use the clipboard-paste sudo pattern from CLAUDE.md).
-- Read-only for Navidrome (and any future Jellyfin) bind mounts: append `:ro`.
+- Read-only for the Navidrome and Jellyfin bind mounts: append `:ro`.
+
+## Storage model — `/srv` vs `/mnt/media`
+
+natto has two filesystems, and which one a thing lives on is deliberate:
+
+- **`/srv`** — the Beelink's internal **238 GB ext4 SSD**. Holds the OS plus
+  every service's config, state and **databases** (`/srv/<svc>/`). Fast, and
+  it's what the nightly backup tarball targets.
+- **`/mnt/media`** — the **5TB ext4** USB drive (this file). Bulk media only.
+  It's the *portable* tier: it physically moves to a replacement host on a
+  cold migration (`runbooks/migrate-natto.md`), mounted UUID-stable.
+
+So **service databases and config live on `/srv`, never on `/mnt/media`** —
+that's the service-state tier (SSD, backed up), whereas `/mnt/media` is bulk,
+removable media storage. This is the single reason the SQLite/Postgres/MariaDB
+stores for Jellyfin, Navidrome, Immich, Nextcloud, Memos, Seerr and the *arrs
+sit under `/srv/<svc>/` and not on the big drive. (Both filesystems are ext4
+now — the older docs justified this with "exfat can't do POSIX locking", which
+was true of the Pi-era exfat drive but no longer applies; the rationale is the
+SSD-vs-bulk split, not a filesystem-capability gap.)
+
+## Hardlinks on import (the *arrs)
+
+Because `/mnt/media` is **ext4**, hardlinks work across the drive, and
+Sonarr/Radarr's default *"Use Hardlinks instead of Copy"* is in effect: when an
+*arr imports a completed grab from `/mnt/media/_unsorted/torrents/` into
+`/mnt/media/video/{movies,tv}/`, the library entry is a **hardlink** to the same
+inode, not a second copy. A title that's both imported *and* still seeding
+therefore occupies its bytes **once**, not twice. (Verified: imported files in
+`_unsorted/torrents/` carry link count ≥ 2.) The old "stored twice because exfat
+has no hardlinks" note in the *arr READMEs predates the ext4 reformat and is no
+longer true.
 
 ## Migration from previous state (2026-05-09)
 

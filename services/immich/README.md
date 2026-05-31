@@ -23,38 +23,30 @@ deployed — see § Machine learning.
 
 ### Why internal disk, not the 5TB
 
-Immich's PostgreSQL datadir **and** its upload library need POSIX
-ownership, locking and atomic renames. The 5TB drive is exfat by design
-(it moves between hosts UUID-stable — see `runbooks/migrate-natto.md`) and
-gives none of that; Immich officially requires a POSIX filesystem for
-`UPLOAD_LOCATION`. Same resolved reasoning as Nextcloud and Jellyfin.
+Immich's PostgreSQL datadir and its upload library are live service state, so
+both live on natto's SSD (`/srv/immich/`), per the repo-wide storage split —
+see `runbooks/media-layout.md` § "Storage model".
 
-> **Capacity caveat (read this).** `/srv` (the Beelink's 238 GB ext4 SSD)
-> had ~130 GB free when Immich was set up. A full Google Photos archive can
-> exceed that. Run `df -h /` on natto during and after the Takeout import.
-> If the library outgrows the SSD it must move to **dedicated POSIX
-> storage** — exfat (`/mnt/media`) is not a safe target for the Immich
-> library (corruption / permission breakage), so do not "solve" a full
-> disk by pointing `UPLOAD_LOCATION` there. Tracked in WORKLIST 7.1.
+> **Capacity caveat (read this).** `/srv` (the 238 GB SSD) had ~130 GB free
+> when Immich was set up. A full Google Photos archive can exceed that. Run
+> `df -h /` on natto during and after the Takeout import. If the library
+> outgrows the SSD it needs **dedicated storage**, not `/mnt/media` (that drive
+> is the bulk-media tier, not sized or intended for the Immich library) — so
+> don't "solve" a full disk by pointing `UPLOAD_LOCATION` there. Tracked in
+> WORKLIST 7.1.
 
 ### Why no Authelia (and why it's still safe)
 
-There is deliberately **no `import authelia`** on the `photos.nthncrtr.com`
-Caddy vhost. Immich's native mobile app — the primary auto-backup
-mechanism — breaks behind `forward_auth` for exactly the reason Jellyfin's
-native clients do (WORKLIST 6.4/6.6). The barrier is instead:
+Deliberately **no `import authelia`** on the `photos.nthncrtr.com` vhost —
+Immich's native auto-backup app breaks behind `forward_auth` (the shared
+reason, tabulated in `services/authelia/README.md`). The barrier instead is
+**tailnet-only reach** (the name resolves to natto's non-routable Tailscale IP;
+Immich is not on the Cloudflare Tunnel, so safety rule 8 holds) **+ Immich's
+own per-user accounts**.
 
-1. **Tailnet-only.** `photos.nthncrtr.com` resolves (via Cloudflare DNS) to
-   natto's *Tailscale* IP, which is not internet-routable. Only devices on
-   the tailnet reach it. Jellyfin remains the one internet-exposed service
-   (safety rule 8); Immich is not on the Cloudflare Tunnel.
-2. **Immich's own per-user accounts.** Set up the admin account on first
-   load, then add per-user accounts.
-
-The port is published on `0.0.0.0:2283` (the Nextcloud model), *not*
-`127.0.0.1` — that is correct here because Immich has app-level auth, so
-this is not the unauthenticated-LAN-door scenario that makes the *arrs bind
-to loopback (safety rule 9).
+Because Immich has app-level auth, the port is published on `0.0.0.0:2283` (the
+Nextcloud model), *not* `127.0.0.1` — this is not the unauthenticated-LAN-door
+scenario that makes the *arrs bind to loopback (safety rule 9).
 
 ## Secrets
 
@@ -80,17 +72,14 @@ file, warns if `secrets.env` is missing, brings the stack up, and probes
 `http://127.0.0.1:2283/api/server/ping`. First boot takes a minute or two
 while postgres initializes and Immich runs migrations.
 
-**DNS (one-time, Cloudflare dashboard — not in repo).** There is no
-`*.nthncrtr.com` wildcard; each subdomain is an explicit record. Add:
-Type **A**, Name **photos**, IPv4 **100.122.71.33** (natto's Tailscale IP,
-same as `music`/`radarr`), Proxy status **DNS only** (grey cloud — the
-proxy can't reach a `100.x` address, and this is what keeps it
-tailnet-only), TTL Auto. Until this exists `photos.nthncrtr.com` does not
-resolve even though Caddy is already serving the vhost. After adding it,
-inside (Pi-hole) clients may still see `NXDOMAIN` for up to ~30 min if the
-name was queried earlier — Pi-hole's negative cache, not a misconfig; wait
-it out, don't restart Pi-hole (CLAUDE.md § "New-subdomain gotcha — Pi-hole
-negative cache").
+**DNS (one-time, Cloudflare dashboard — not in repo).** Add the per-name
+grey-cloud A record this network uses for every tailnet-only subdomain (no
+wildcard exists — see CLAUDE.md): Type **A**, Name **photos**, IPv4
+**100.122.71.33** (natto's Tailscale IP), Proxy status **DNS only**. Until it
+exists the name doesn't resolve even though Caddy serves the vhost; and if it
+was queried earlier, inside clients may see `NXDOMAIN` for ~30 min (Pi-hole
+negative cache — wait it out, don't restart Pi-hole; CLAUDE.md § "New-subdomain
+gotcha").
 
 First use: open `https://photos.nthncrtr.com` (on the tailnet) → create the
 admin account → Account Settings → API Keys → create one for the Homepage

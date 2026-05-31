@@ -21,8 +21,8 @@
 # HTTP port, free on natto (8080 = gluetun, 8081 = nextcloud, 8053 =
 # pihole admin).
 #
-# Data layout on natto (config/cache on the Beelink's internal ext4 — the
-# media itself stays on the exfat 5TB, mounted read-only):
+# Data layout on natto (config/cache on the Beelink's internal SSD — the
+# media itself stays on the 5TB drive, mounted read-only):
 #   /srv/jellyfin/config  → server config + library DB + metadata
 #   /srv/jellyfin/cache   → transcode + image cache
 #   /mnt/media/video      → the video library (movies/ + tv/), bind-mounted :ro
@@ -30,9 +30,8 @@
 #                           Jellyfin is here for the webOS/TV app ecosystem;
 #                           Navidrome stays canonical for Subsonic clients +
 #                           Last.fm scrobbling), bind-mounted :ro
-# config/cache are NOT on the exfat 5TB: Jellyfin's SQLite library DB needs
-# POSIX locking/atomic renames exfat can't give (same reasoning as Nextcloud,
-# see services/nextcloud/README.md).
+# config/cache live on /srv (the SSD service-state tier), not the bulk 5TB —
+# repo-wide storage split, see runbooks/media-layout.md § "Storage model".
 #
 # Hardware transcoding: the Beelink S12's Intel iGPU is passed through via
 # /dev/dri (QuickSync). group_add carries natto's `render` (gid 991) and

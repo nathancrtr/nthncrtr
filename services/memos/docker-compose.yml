@@ -18,9 +18,9 @@
 # Jellyfin/Seerr/Immich. The gate is tailnet-only reach + Memos' own per-user
 # accounts. Don't put notes.nthncrtr.com behind Authelia.
 #
-# Data layout on natto (on the Beelink's internal ext4 — NOT the exfat 5TB;
-# the embedded SQLite DB needs POSIX locking/atomic renames exfat can't give,
-# same reasoning as Nextcloud/Immich/Jellyfin):
+# Data layout on natto (on the Beelink's internal SSD — NOT the bulk 5TB media
+# drive; the embedded SQLite DB is live service state and belongs on the /srv
+# SSD tier, see runbooks/media-layout.md § "Storage model"):
 #   /srv/memos/data  → SQLite DB + uploaded resources (MEMOS_DATA)
 #
 # 5230 is Memos' default port (free on natto: 8080 gluetun, 8081 nextcloud,

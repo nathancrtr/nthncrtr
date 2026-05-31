@@ -12,9 +12,9 @@
 # http://natto.tailaf7ea6.ts.net:8081 (or http://natto:8081 on the LAN).
 # 8081 because 8080 is taken by gluetun (qBittorrent).
 #
-# Data layout on natto (all on the Beelink's internal ext4 — NOT the exfat
-# 5TB drive; Nextcloud needs POSIX semantics its data dir + DB can't get on
-# exfat):
+# Data layout on natto (all on the Beelink's internal SSD — NOT the bulk 5TB
+# media drive; live DB/data is service state and belongs on the /srv SSD tier,
+# see runbooks/media-layout.md § "Storage model"):
 #   /srv/nextcloud/html  → app code + config.php + installed apps
 #   /srv/nextcloud/data  → user files (the migrated Drive content)
 #   /srv/nextcloud/db    → MariaDB datadir

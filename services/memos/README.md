@@ -18,29 +18,23 @@ MIT-licensed. This is the simplest service in the fleet.
 
 ### Why internal disk, not the 5TB
 
-Memos' embedded SQLite DB needs POSIX locking and atomic renames. The 5TB
-drive is exfat by design and gives none of that, so the data dir lives on
-the Beelink's internal ext4 (`/srv`). Same resolved reasoning as
-Nextcloud/Immich/Jellyfin. The footprint is tiny (text notes), so there's no
-capacity concern like Immich's.
+Memos' embedded SQLite DB is service state, so the data dir lives on natto's SSD
+(`/srv/memos/data`) like every other service's DB — see `runbooks/media-layout.md`
+§ "Storage model". The footprint is tiny (text notes), so there's no capacity
+concern like Immich's.
 
 ### Why no Authelia (and why it's still safe)
 
-`notes.nthncrtr.com` deliberately has **no `import authelia`** on its Caddy
-vhost. Memos ships native mobile apps, and `forward_auth` breaks native
-clients — the same reason Jellyfin, Seerr, and Immich are exempt (WORKLIST
-6.4/6.6). The barrier is instead:
+Deliberately **no `import authelia`** on the `notes.nthncrtr.com` vhost —
+Memos' native mobile app breaks behind `forward_auth` (the shared reason,
+tabulated in `services/authelia/README.md`). The barrier instead is
+**tailnet-only reach** (the name resolves to natto's non-routable Tailscale IP;
+not on the Cloudflare Tunnel, so safety rule 8 holds) **+ Memos' own per-user
+accounts**.
 
-- **Tailnet-only reach** — the name resolves (via Cloudflare DNS) to natto's
-  Tailscale IP `100.122.71.33`, so it's only reachable from devices on the
-  tailnet. It is **not** on the Cloudflare Tunnel, so safety rule 8 holds
-  (Jellyfin + Seerr remain the only internet-exposed services).
-- **Memos' own per-user accounts.**
-
-Because there's no Authelia, the `0.0.0.0:5230` publish is **not** an
-unauthenticated open door (Memos has its own login) — this is the
-Nextcloud/Immich model, not the *arrs' `127.0.0.1` + Authelia model (safety
-rule 9). Don't put `notes.nthncrtr.com` behind Authelia.
+Because Memos has app-level auth, the `0.0.0.0:5230` publish is **not** an
+unauthenticated open door — the Nextcloud/Immich model, not the *arrs'
+`127.0.0.1` + Authelia model (safety rule 9).
 
 ## Deploy
 

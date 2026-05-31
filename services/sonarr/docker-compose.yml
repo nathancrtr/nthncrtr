@@ -14,8 +14,8 @@
 #   the old /mnt/media/downloads/complete/ — that path does not exist). The
 #   `tv` category has an empty save path and qBit auto-TMM is off, so grabs
 #   land flat there; Sonarr imports them into /mnt/media/video/tv/.
-#   /mnt/media is exfat — no hardlinks — so "keep seeding" copies the file
-#   into the library (stored twice until seeding stops). See README.md.
+#   /mnt/media is ext4, so "keep seeding" hardlinks the file into the
+#   library (one inode, one copy on disk — not stored twice). See README.md.
 #
 # mem_limit: 512m is a deliberate bound on a SHARED hub (~7 GiB Beelink, not
 #   the old 2 GB Pi / SD card). Sonarr idles ~150–250 MB and is not OOM-killed

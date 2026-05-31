@@ -243,9 +243,10 @@ deploy_qbittorrent() {
   }
   # Fast staging area for qBit's in-progress pieces, bind-mounted into the
   # container at /incomplete. Lives on the root SATA SSD, decoupling small
-  # random torrent writes (which cap exfat-on-USB-HDD at ~10 MB/s) from the
-  # archival /mnt/media. apply-tuning.sh sets temp_path_enabled/temp_path
-  # to match.
+  # random torrent writes (which capped the slow USB-HDD at ~10 MB/s; that
+  # figure was measured on the exfat drive pre-2026-05-20 reformat — see
+  # services/qbittorrent/README.md) from the archival /mnt/media.
+  # apply-tuning.sh sets temp_path_enabled/temp_path to match.
   [[ -d /srv/qbit-incomplete ]] || {
     install -d -o nthncrtr -g nthncrtr -m 0755 /srv/qbit-incomplete
     note "created /srv/qbit-incomplete"
@@ -442,9 +443,9 @@ deploy_immich() {
   log "immich"
   local CHANGED=0
   (( DRY_RUN )) || {
-    # Parent + the two bind targets, on the internal ext4 (NOT exfat — see
-    # the compose header / README: postgres + the upload library both need
-    # POSIX semantics). Created root-owned and empty; the immich-server and
+    # Parent + the two bind targets, on the internal SSD /srv (the service-
+    # state tier — NOT the bulk /mnt/media drive; see the compose header /
+    # README). Created root-owned and empty; the immich-server and
     # postgres images chown their own subtrees on first init. Tailnet-only;
     # the photos.nthncrtr.com Caddyfile vhost is deployed via `deploy.sh
     # caddy` (run it after this on first stand-up).
@@ -480,8 +481,8 @@ deploy_memos() {
   log "memos"
   local CHANGED=0
   (( DRY_RUN )) || {
-    # Parent + the data dir, on the internal ext4 (NOT exfat — the embedded
-    # SQLite DB needs POSIX locking/atomic renames). Created root-owned and
+    # Parent + the data dir, on the internal SSD /srv (the service-state tier —
+    # NOT the bulk /mnt/media drive). Created root-owned and
     # empty; the memos image chowns its own subtree on first init.
     # Tailnet-only; the notes.nthncrtr.com Caddyfile vhost is deployed via
     # `deploy.sh caddy` (run it after this on first stand-up).

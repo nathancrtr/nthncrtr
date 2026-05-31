@@ -21,51 +21,31 @@ and Overseerr.
 
 ## How "public, but only Jellyfin + Seerr" works
 
-This is now the second `*.nthncrtr.com` name reachable from the internet
-(alongside `play.nthncrtr.com`). The containment is structural — the
-Cloudflare Tunnel's `ingress:` list in `services/cloudflared/config.yml`
-is the allowlist:
+`requests.nthncrtr.com` is the second (and only other) internet-reachable
+name, alongside `play.nthncrtr.com`. The containment is structural: the
+Cloudflare Tunnel's `ingress:` list is the entire allowlist and everything
+else 404s — adding a third public service is an explicit operator decision
+(CLAUDE.md safety rule 8). The tunnel mechanics, the GFiber-dead-end backstory,
+and the ingress block itself live in `services/cloudflared/README.md`.
 
-```yaml
-ingress:
-  - hostname: play.nthncrtr.com      # Jellyfin
-    service: http://localhost:8096
-  - hostname: requests.nthncrtr.com  # Seerr
-    service: http://localhost:5055
-  - service: http_status:404          # everything else → 404
-```
-
-Nothing else on natto is reachable through the tunnel. Adding a third
-public service is an explicit operator decision: append a hostname,
-update CLAUDE.md safety rule 8, document it. Don't silently extend.
-
-**Inside path** mirrors Jellyfin's:
-
-- **Cloudflare CNAME** `requests.nthncrtr.com → <tunnel-uuid>.cfargotunnel.com`
-  (proxied / orange-cloud — created by
-  `cloudflared tunnel route dns play requests.nthncrtr.com`).
-- **Pi-hole local-DNS override** `192.168.1.240 requests.nthncrtr.com`
-  so inside clients hit Caddy directly instead of hairpinning through
-  Cloudflare. (Add via Pi-hole UI → Settings → Local DNS Records — see
-  the Jellyfin README's split-horizon section. `.240` is natto's primary
-  LAN IP; the `.50` alias also works — see CLAUDE.md.)
-- **Caddy** inside-only vhost in `services/caddy/Caddyfile` —
-  `reverse_proxy 127.0.0.1:5055`, no `import authelia`.
+**Inside path** mirrors Jellyfin's: a proxied Cloudflare CNAME
+(`requests.nthncrtr.com → <tunnel-uuid>.cfargotunnel.com`, from
+`cloudflared tunnel route dns play requests.nthncrtr.com`), a Pi-hole local
+override (`192.168.1.50 requests.nthncrtr.com`) so inside clients hit Caddy
+directly instead of hairpinning through Cloudflare (mechanism:
+`services/pihole/README.md`), and an inside-only Caddy vhost
+(`reverse_proxy 127.0.0.1:5055`, no `import authelia`).
 
 ## Auth — Jellyfin SSO, no Authelia
 
-Seerr supports Jellyfin auth natively, so friends use the same account
-they already have. **Do not** add `import authelia` to the Caddyfile
-block: Seerr ships native mobile apps, and `forward_auth` breaks them
-the same way it breaks Jellyfin/Immich (WORKLIST 6.4/6.6).
+Seerr supports Jellyfin auth natively, so friends use the same account they
+already have. **Do not** add `import authelia` to the Caddyfile block — Seerr's
+native mobile app breaks under `forward_auth` (the shared reason, tabulated in
+`services/authelia/README.md`).
 
-The brute-force gate is a **Cloudflare WAF Rate-Limiting rule** in the
-Cloudflare dashboard (zone `nthncrtr.com` → Security → WAF → Rate
-limiting rules), parallel to the existing Jellyfin one. Suggested shape:
-match URI path `/api/v1/auth/jellyfin` method `POST`, ~5 req/min per IP →
-managed challenge ~10 min. This is dashboard state, **not in this
-repo** — same class as the Pi-hole local-DNS records and the Jellyfin
-WAF rule.
+The brute-force gate is a **Cloudflare WAF Rate-Limiting rule** (dashboard
+state, not in repo — same class as the Jellyfin one): match URI path
+`/api/v1/auth/jellyfin` method `POST`, ~5 req/min per IP → managed challenge.
 
 ## Networking inside Docker
 
@@ -81,12 +61,10 @@ which then talk to qBit.
 
 ## Why config on internal disk, not /mnt/media
 
-Seerr stores settings + request history in a local SQLite DB at
-`/app/config/db/`. SQLite needs POSIX locking + atomic renames — exfat
-can give them on /mnt/media's 5TB, but the Beelink's internal ext4 is
-the canonical store for live DB state across this repo (Jellyfin,
-Nextcloud, Immich, the *arrs). Same reasoning. The nightly `/srv`
-backup picks it up; no separate plumbing needed.
+Seerr's settings + request history are a local SQLite DB — service state, so it
+lives on natto's SSD (`/srv/seerr/config/`) like every other service's DB, not
+on the bulk media drive. See `runbooks/media-layout.md` § "Storage model". The
+nightly `/srv` backup picks it up; no separate plumbing needed.
 
 ## First-run setup (interactive — not done by deploy.sh)
 

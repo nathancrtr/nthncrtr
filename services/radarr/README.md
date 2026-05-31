@@ -15,7 +15,7 @@ Prowlarr, hands grabs to qBittorrent, imports completed files into
 | Thing | Reality on natto |
 |---|---|
 | Container / image | `radarr` / `lscr.io/linuxserver/radarr:latest`, branch `master` |
-| WebUI / auth | `7878`; `AuthenticationRequired = DisabledForLocalAddresses` (Authelia fronts the public route — see `services/authelia/`) |
+| WebUI / auth | `7878`; `AuthenticationMethod=External` — no in-app login page, trusts the Authelia-fronted proxy (the API key still guards `/api`). The full two-halves model (External + `127.0.0.1` publish + `arrnet`) is **CLAUDE.md safety rule 9**. |
 | Root folder | `/mnt/media/video/movies` |
 | Download client | qBittorrent at `gluetun:8080` (qBit shares gluetun's netns), **category `movies`**. Radarr joins `qbittorrent_default` so it reaches gluetun by name; the 127.0.0.1 host-publish path is dead (safety rule 9). |
 | API key | `/srv/radarr/config/config.xml` (`<ApiKey>`); mirrored to `HOMEPAGE_VAR_RADARR_KEY` in `/srv/homepage/secrets.env` for the Homepage widget |
@@ -30,16 +30,12 @@ grab does *not* get a per-category folder — every grab, movies and tv alike,
 lands flat in `/mnt/media/_unsorted/torrents/`. Radarr then imports from
 there into `/mnt/media/video/movies/`.
 
-The older docs claimed a `/mnt/media/downloads/complete/` save path and
-hardlink-on-import. Both are wrong now:
-
-- The save path is `/mnt/media/_unsorted/torrents`, not `…/downloads/complete`.
-- `/mnt/media` is **exfat**, which has **no hardlink support**. Radarr's
-  default ("keep seeding after import") therefore *copies* the file into the
-  library while the original keeps seeding from `_unsorted/torrents/` — i.e.
-  every imported title is stored **twice** until you stop seeding it. This is
-  a known, accepted trade-off here (seedbox + library on one exfat drive),
-  not a bug — but budget disk accordingly.
+One older claim was a `/mnt/media/downloads/complete/` save path — wrong; it's
+`/mnt/media/_unsorted/torrents`. The other was "stored twice because exfat has
+no hardlinks" — **also no longer true**: `/mnt/media` is **ext4**, so Radarr's
+default *"Use Hardlinks instead of Copy"* hardlinks the import into the library.
+An imported title that keeps seeding shares one inode — **one** copy on disk,
+not two. See `runbooks/media-layout.md` § "Hardlinks on import".
 
 ## Activating / re-provisioning (already done, kept for cold-rebuild)
 

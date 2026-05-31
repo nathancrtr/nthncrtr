@@ -7,19 +7,34 @@ session cookie scoped to `.nthncrtr.com` covers all of them.
 
 This is deliberately scoped to the **web-admin tier only** (operator
 decision, optimising for convenience over a hard security boundary — the
-services already sit behind Tailscale/Caddy). It is **not** in front of:
+services already sit behind Tailscale/Caddy).
+
+### Canonical list of what's *not* behind Authelia (and why)
+
+This table is the single source of truth for the no-Authelia decision; the
+individual service READMEs point here rather than re-arguing it. The common
+thread for the media/app services is the same one that keeps Jellyfin and
+Seerr off Authelia even though they're internet-exposed: **`forward_auth`
+issues a browser redirect to the login portal, which native mobile / TV /
+sync clients can't follow** — it breaks the very apps that are the point of
+the service. So they each carry their *own* per-user auth instead.
 
 | Service | Why it's excluded |
 |---|---|
-| **Plex** | Auth is plex.tv accounts — cannot be folded into a self-hosted IdP. Permanently separate. |
-| **Jellyfin** | Native/mobile/Chromecast clients can't follow a browser auth redirect. `forward_auth` would break every non-browser client. (Could be unified later via Jellyfin's own OIDC plugin — out of scope.) |
+| **Jellyfin** | Native TV/phone/Chromecast clients can't follow the auth redirect. Its own per-user accounts + a Cloudflare WAF rate-limit are the gate (CLAUDE.md safety rule 8). |
+| **Seerr** | Native mobile app; same redirect problem. Uses Jellyfin-SSO (inherits Jellyfin's accounts) + a WAF rate-limit. |
+| **Immich** | Native auto-backup mobile app breaks under `forward_auth`. Tailnet-only + Immich's own accounts. |
 | **Navidrome** | Subsonic mobile clients authenticate per-app, not via browser SSO. Web UI left on Navidrome's own login for consistency with the apps. |
-| **Nextcloud** | Tailscale-only, native sync/WebDAV clients; would need its OIDC app, not forward-auth. Out of scope. |
+| **Nextcloud** | Tailnet-only; native sync/WebDAV clients would need its OIDC app, not forward-auth. |
+| **Memos** | Native mobile app; tailnet-only + Memos' own accounts. |
 | **Pi-hole** | Admin UI left on its own auth — unrelated to the media-admin credential set. |
 
-Realistic end state: one Authelia entry in the password manager, **plus**
-Plex, plus any app-passwords the mobile clients of the excluded services
-need. A real reduction, not zero.
+(Could any of these be unified later via Authelia's *OIDC* provider mode
+rather than forward-auth? Yes, in principle — out of scope here.)
+
+Realistic end state: one Authelia entry in the password manager, plus the
+per-app passwords/accounts the excluded services' native clients need. A real
+reduction, not zero.
 
 ## Why Authelia (not Authentik / Pocket ID)
 
@@ -81,9 +96,11 @@ Caddy is native on natto, so every proxied request reaches the backing app
 from a *local* address regardless of where the real client is. Use that:
 
 - **Sonarr / Radarr / Prowlarr** — Settings → General → Security →
-  *Authentication Required* → **"Disabled for Local Addresses"**. Keep Forms
-  auth + the API keys. Result: Authelia is the only browser gate; Homepage
-  widgets and Prowlarr↔*arr sync (API-key, local) keep working untouched.
+  *Authentication Method* → **External** (no in-app login page; trust the
+  proxy), *Authentication Required* → **"Disabled for Local Addresses"**. The
+  API keys still guard `/api`. Result: Authelia is the only browser gate;
+  Homepage widgets and Prowlarr↔*arr sync (API-key, local) keep working
+  untouched. This is the app half of CLAUDE.md safety rule 9.
 - **qBittorrent** — Web UI → Authentication → enable *"Bypass authentication
   for clients in whitelisted IP subnets"* and add the Docker bridge subnet
   Caddy connects from (alongside the existing localhost bypass the

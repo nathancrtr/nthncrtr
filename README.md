@@ -74,7 +74,7 @@ flowchart LR
 
         Gluetun["gluetun sidecar<br/>Proton VPN WireGuard<br/>(qBit egress, NOT natto's default route)"]:::vpn
 
-        Media["/mnt/media (exfat, 5TB USB)<br/>music · video · backups"]:::store
+        Media["/mnt/media (ext4, 5TB USB)<br/>music · video · backups"]:::store
         Srv["/srv (ext4 SSD)<br/>configs · immich library · nextcloud db"]:::store
     end
 
@@ -217,7 +217,7 @@ To bring up a replacement natto from cold metal, follow [`runbooks/migrate-natto
 
 - **Service data lives at `/srv/<svc>/` on natto**, compose file co-located with `./data` and `./config` so relative paths resolve.
 - **Secrets are never committed.** Each service ships `secrets.env.example` with empty variables; the real `secrets.env` (mode `0600`) lives at `/srv/<svc>/` and is `.gitignore`d. Caddy's `CF_API_TOKEN` lives at `/etc/caddy/caddy.env`, owned `caddy:caddy`, loaded via systemd `EnvironmentFile=`.
-- **5TB drive at `/mnt/media`** (exfat, uid/gid 1000). Music at `/mnt/media/music`, video at `/mnt/media/video/{movies,tv}`, backups at `/mnt/media/backups`. `/mnt/media` is read-mostly — never run destructive operations against it.
+- **5TB drive at `/mnt/media`** (ext4; mount root `root:root`, service subdirs `chown`ed to `nthncrtr`). Music at `/mnt/media/music`, video at `/mnt/media/video/{movies,tv}`, backups at `/mnt/media/backups`. `/mnt/media` is read-mostly — never run destructive operations against it. Layout + storage model: [`runbooks/media-layout.md`](runbooks/media-layout.md).
 - **Pi-hole stops require explicit confirmation.** A restart drops DNS for everyone in the house for ~30s. Caddy reloads require a successful `caddy adapt` (preferred over `caddy validate`, which tries to provision TLS) before touching the running config.
 - **Cloudflare DNS records are not in the repo.** Each `*.nthncrtr.com` subdomain is a per-name grey-cloud A record pointing at natto's Tailscale IP `100.122.71.33` — added by hand in the Cloudflare dashboard. A brand-new subdomain needs that record before Caddy can serve it.
 

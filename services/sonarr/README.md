@@ -14,7 +14,7 @@ Prowlarr, hands grabs to qBittorrent, imports completed files into
 | Thing | Reality on natto |
 |---|---|
 | Container / image | `sonarr` / `lscr.io/linuxserver/sonarr:latest`, branch `main` |
-| WebUI / auth | `8989`; `AuthenticationRequired = DisabledForLocalAddresses` (Authelia fronts the public route) |
+| WebUI / auth | `8989`; `AuthenticationMethod=External` — no in-app login page, trusts the Authelia-fronted proxy (the API key still guards `/api`). The full two-halves model (External + `127.0.0.1` publish + `arrnet`) is **CLAUDE.md safety rule 9**. |
 | Root folder | `/mnt/media/video/tv` |
 | Download client | qBittorrent at `gluetun:8080` (qBit shares gluetun's netns), **category `tv`**. Sonarr joins `qbittorrent_default` so it reaches gluetun by name; the 127.0.0.1 host-publish path is dead (safety rule 9). |
 | API key | `/srv/sonarr/config/config.xml` (`<ApiKey>`); mirrored to `HOMEPAGE_VAR_SONARR_KEY` in `/srv/homepage/secrets.env` |
@@ -37,11 +37,11 @@ Same as Radarr: qBit's global save path is `/mnt/media/_unsorted/torrents`,
 the `tv` category has an **empty** save path, and Automatic Torrent
 Management is **off** — so tv grabs land flat in
 `/mnt/media/_unsorted/torrents/`, and Sonarr imports from there into
-`/mnt/media/video/tv/`. The old `/mnt/media/downloads/complete/` +
-hardlink claims are wrong: that path doesn't exist, and `/mnt/media` is
-**exfat** (no hardlinks), so "keep seeding" means each imported episode is
-**copied** into the library while the original keeps seeding — stored twice
-until seeding stops. Accepted trade-off, but budget disk for it.
+`/mnt/media/video/tv/`. The old `/mnt/media/downloads/complete/` path never
+existed, and the "copied/stored twice because exfat has no hardlinks" claim is
+**no longer true** — `/mnt/media` is **ext4**, so "keep seeding" hardlinks each
+imported episode into the library (one inode, one copy on disk). See
+`runbooks/media-layout.md` § "Hardlinks on import".
 
 ## Activating / re-provisioning (already done, kept for cold-rebuild)
 

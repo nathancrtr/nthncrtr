@@ -47,52 +47,23 @@ exposure allowlist:
    is correct for both: outside resolves to Cloudflare → tunnel → Jellyfin;
    inside resolves (split-horizon) to Caddy → Jellyfin.
 
-> **Why a tunnel and not a router port-forward (cost several debugging
-> rounds — do not retry the forward):** this is GFiber. It (a) *reserves
-> inbound WAN 443* for its own management UI (answers with a self-signed
-> cert, never forwards — symptom: external cert error / HTTP 408, zero
-> connections in `journalctl -u caddy`); (b) its port-forward feature
-> targets a *phantom device* — a MAC that is neither of natto's NICs —
-> because natto is static-IP and GFiber never DHCP-learned it; (c) its
-> only working "expose" is **DMZ = all ports**, which would put SSH, the
-> Caddy admin API, Pi-hole and every *arr on the internet. All three are
-> dead ends. An outbound tunnel sidesteps every one of them.
+> **Why a tunnel and not a router port-forward:** GFiber makes the forward
+> impossible (it reserves WAN 443, targets a phantom MAC, and only offers
+> all-ports DMZ). Proven dead end — do not retry it. Full reasoning in
+> `services/cloudflared/README.md` § "Why a tunnel".
 
-#### Split-horizon: local DNS records on this Pi-hole (v6)
+#### Split-horizon: the inside path (`play.nthncrtr.com → LAN`)
 
-The *inside* half is **not optional**. Without it, an inside client
-resolves `play.nthncrtr.com` to Cloudflare's proxied edge and every LAN
-stream hairpins out to Cloudflare and back through the tunnel — it "works"
-but adds latency, burns home uplink, and pushes local 4k through
-Cloudflare's video-proxying gray area for no reason. The split-horizon
-record keeps LAN traffic on `Caddy :443 → Jellyfin`, entirely local.
+The *inside* half is **not optional**. Without it, an inside client resolves
+`play.nthncrtr.com` to Cloudflare's proxied edge and every LAN stream hairpins
+out to Cloudflare and back — it "works" but adds latency, burns home uplink,
+and pushes local 4k through Cloudflare's video-proxying gray area for no reason.
+The Pi-hole local override keeps LAN traffic on `Caddy :443 → Jellyfin`.
 
-This Pi-hole is **v6** (Core v6.x / FTL v6.x). v6 has *two* places a local
-A record can live; know both:
-
-- **`/etc/pihole/hosts/custom.list`** — what the web UI **Settings → Local
-  DNS Records** writes. Format: one `IP<space>name` per line. Saving via
-  the UI hot-reloads FTL automatically (no container restart, no DNS
-  outage). **This is the preferred path** — it can't clobber other records.
-  `play.nthncrtr.com → 192.168.1.240` was added here.
-- **`dns.hosts = [ … ]` in `/etc/pihole/pihole.toml`** — the v6 settings
-  file. The pre-existing `192.168.1.50 music.nthncrtr.com` record lives
-  here (marked `### CHANGED`; was `natto.nthncrtr.com` until the
-  2026-05-17 rename). Editing the toml directly needs a reload
-  (`pihole reloaddns`) and risks clobbering the array if hand-edited —
-  prefer the UI unless scripting.
-
-Both are **runtime state on natto, not in this repo.** They are captured by
-the nightly `/srv` backup (Pi-hole config lives under `/srv/pihole`), so a
-restore brings them back — but a **from-scratch natto rebuild without a
-backup restore loses split-horizon** (LAN streams then hairpin through
-Cloudflare). Re-add per WORKLIST 6.6 after any such rebuild.
-
-Verify the record from natto:
-
-```sh
-dig +short play.nthncrtr.com @127.0.0.1   # must be natto's LAN IP, NOT a Cloudflare edge IP
-```
+The record (`play.nthncrtr.com → 192.168.1.240`) is runtime state on natto, not
+in this repo, and must be re-added via the Pi-hole UI after a from-scratch
+rebuild (WORKLIST 6.6). For how Pi-hole stores these records and how to verify
+one, see `services/pihole/README.md` § "Local DNS records (split-horizon)".
 
 ### Hardening (this login now faces the internet)
 
@@ -125,11 +96,10 @@ dig +short play.nthncrtr.com @127.0.0.1   # must be natto's LAN IP, NOT a Cloudf
 
 ### Why config on internal disk, not the 5TB
 
-Jellyfin's library is SQLite; it needs POSIX locking and atomic renames the
-exfat 5TB can't give (the drive is exfat by design so it moves between hosts
-UUID-stable — see `runbooks/migrate-natto.md`). Same reasoning as Nextcloud.
-Only `config/` and `cache/` live on the Beelink's internal ext4; the media
-itself stays on `/mnt/media/video` and is bind-mounted **read-only**.
+Jellyfin's library DB (SQLite) is service state, so `config/` and `cache/` live
+on natto's internal SSD (`/srv`); only the media stays on `/mnt/media/video`,
+bind-mounted **read-only**. This is the repo-wide storage split — see
+`runbooks/media-layout.md` § "Storage model".
 
 ### History: it used to be Tailscale-only
 

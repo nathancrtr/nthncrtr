@@ -220,11 +220,14 @@ fine for this setup).
 ### Music: two servers on one library, on purpose
 
 Navidrome (at `music.nthncrtr.com`, tailnet-only) is the canonical music
-server — it's Subsonic-protocol, handles Last.fm scrobbling
+server — it's Subsonic-protocol, scrobbles to Last.fm natively
 (`services/navidrome/README.md`), and is what desktop/phone Subsonic clients
 talk to. Jellyfin's music library exists specifically to reach the **LG webOS
 TV app** (and other Jellyfin-native TV/console clients) where no good
-Subsonic client exists. The two scan and tag independently, and "now playing"
+Subsonic client exists. Jellyfin can *also* scrobble to Last.fm, via a plugin
+— see *Last.fm scrobbling* below; that's the one music capability where it
+overlaps Navidrome rather than complements it. The two scan and tag
+independently, and "now playing"
 state lives in whichever one you used — that's expected, not a bug. Both
 point at `/mnt/media/music` read-only, so neither can corrupt the other's
 view of the files.
@@ -233,6 +236,51 @@ This also means **music is now reachable via the public
 `play.nthncrtr.com`** (the Jellyfin tunnel doesn't distinguish libraries) —
 not just tailnet, the way Navidrome is. The per-user-account + WAF
 rate-limit posture (above) covers it the same way it covers video.
+
+### Last.fm scrobbling (closes the TV-app gap)
+
+Jellyfin has **no native Last.fm scrobbling** (unlike Navidrome, which does
+it server-side — `services/navidrome/README.md` § Last.fm). It's a
+**third-party plugin**, and that makes it the same class of *runtime /
+dashboard state* as the QSV `encoding.xml`, the Cloudflare WAF rules, and the
+Pi-hole split-horizon record: **not in this repo**, nothing for `deploy.sh`
+to push. It lives under `/srv/jellyfin/config/plugins/` (config in
+`config/plugins/configurations/`), so the nightly `natto-*.tgz` backs it up
+and a *restore* brings it back — but a **from-scratch natto rebuild without a
+restore loses it** and it must be re-applied (repo + reinstall + per-user
+re-link). Same caveat as QSV above.
+
+This is worth having *despite* Navidrome already scrobbling: the Jellyfin
+music library exists specifically for the **LG webOS TV app** (see *Music*
+above), where there's no Subsonic client — so scrobbling **from the TV** is
+exactly the gap Navidrome can't cover.
+
+**Plugin:** the actively-maintained [`danielfariati/jellyfin-plugin-lastfm`](https://github.com/danielfariati/jellyfin-plugin-lastfm)
+fork (jesseward's original now defers to it). The API key is **embedded in
+the plugin**, so — unlike Navidrome — there is **no** Last.fm app to register
+and no `ND_LASTFM_*`-style server secret to set here.
+
+**Install (admin, once):**
+
+1. Dashboard → Plugins → **Repositories** → add → name `LastFM`, URL
+   `https://raw.githubusercontent.com/danielfariati/jellyfin-plugin-lastfm/master/manifest.json`.
+2. Dashboard → Plugins → **Catalog** → install **Last.fm** → **restart the
+   container** (`cd /srv/jellyfin && docker compose restart`).
+
+**Per-user link (each user, once):** Dashboard → Plugins → **Last.fm** → pick
+the user → enter that user's Last.fm **username + password**. The password is
+exchanged for a session key and **not retained**; the session key is stored
+in the plugin config. Each operator-side user links their own Last.fm account
+separately (mirrors Navidrome's per-user "Link").
+
+**Double-scrobble caveat:** a single listen scrobbles once, from whichever
+app plays it. With the usual split — TV → Jellyfin, desktop/phone Subsonic →
+Navidrome — there's no overlap. Just don't play the *same track at the same
+time* through both apps linked to the *same* Last.fm account.
+
+**If TV/mobile scrobbles go missing:** enable the per-user **Alternative
+Mode** in the plugin (scrobble on `UserDataSaved` instead of
+`PlaybackStopped`) — some TV/mobile clients report stop events unreliably.
 
 ## Operating
 

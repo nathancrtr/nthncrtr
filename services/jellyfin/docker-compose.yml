@@ -28,8 +28,11 @@
 #   /mnt/media/video      → the video library (movies/ + tv/), bind-mounted :ro
 #   /mnt/media/music      → the music library (also served by Navidrome —
 #                           Jellyfin is here for the webOS/TV app ecosystem;
-#                           Navidrome stays canonical for Subsonic clients +
-#                           Last.fm scrobbling), bind-mounted :ro
+#                           Navidrome stays canonical for Subsonic clients.
+#                           Jellyfin can ALSO scrobble to Last.fm via a plugin
+#                           (closes the TV-app gap — README § Last.fm
+#                           scrobbling; runtime/dashboard state, not in repo),
+#                           bind-mounted :ro
 # config/cache live on /srv (the SSD service-state tier), not the bulk 5TB —
 # repo-wide storage split, see runbooks/media-layout.md § "Storage model".
 #

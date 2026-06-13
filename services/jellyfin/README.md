@@ -282,6 +282,57 @@ time* through both apps linked to the *same* Last.fm account.
 Mode** in the plugin (scrobble on `UserDataSaved` instead of
 `PlaybackStopped`) — some TV/mobile clients report stop events unreliably.
 
+### Hiding the per-album `.m3u` playlists (Jellyfin Ignore plugin)
+
+Every OPS/scene album that lands in `/mnt/media/music` (via
+`tools/orpheus/download_available.py`) ships a per-album `.m3u` file listing
+its own tracks. Jellyfin's library scanner **auto-imports every playlist file
+it finds** as a Playlist — so the music library quietly produced **418**
+junk playlists (one per album, named after the album), drowning any real
+hand-made playlist in the Playlists view. Jellyfin has **no native toggle** to
+disable `.m3u` import ([jellyfin#971](https://github.com/jellyfin/jellyfin/issues/971),
+open for years), and the `.m3u` files **cannot be removed from disk** — they
+are part of the **seeded** OPS torrents (deleting/renaming one breaks the
+torrent and the ratio). So the fix has to be Jellyfin-side, leaving the files
+in place.
+
+The fix is the third-party [`fdett/jellyfin-ignore`](https://github.com/fdett/jellyfin-ignore)
+plugin: it registers an `IResolverIgnoreRule` so the scanner **skips paths
+matching glob patterns**, which both prevents new imports *and* prunes the
+existing ones on the next scan (an ignored file is treated as gone). Same
+class of *runtime / dashboard state* as the Last.fm plugin / QSV
+`encoding.xml` / WAF rules: **not in this repo**, under
+`/srv/jellyfin/config/data/plugins/` (config in
+`.../plugins/configurations/Jellyfin.Plugin.Ignore.xml`), backed up by the
+nightly `natto-*.tgz`, **lost on a from-scratch rebuild** → re-apply.
+
+Caveat worth knowing: the plugin's newest release (v0.5) targets ABI **10.9**
+and is unmaintained since 2024, but it loads **Active** and works on **10.11.10**
+(verified 2026-06-13 — a full scan took the music library's imported playlists
+from 418 → 0 with track/album/artist counts unchanged). A future Jellyfin
+major could break it; if it ever shows `Status: NotSupported`/errors in
+Dashboard → Plugins, the fallback is an API cleanup loop (a `systemd` timer
+deleting playlists whose `Path` ends in `.m3u`).
+
+**Re-apply on a rebuild (admin, once):**
+
+1. Dashboard → Plugins → **Repositories** → add → URL
+   `https://raw.githubusercontent.com/fdett/jellyfin-ignore/master/manifest.json`.
+2. Dashboard → Plugins → **Catalog** → install **Jellyfin Ignore** → **restart
+   the container** (`cd /srv/jellyfin && docker compose restart`).
+3. Dashboard → Plugins → **Jellyfin Ignore** → set **Ignore patterns** (one
+   per line; DotNet.Glob, matched on the *whole* path — so the leading
+   `/**/` is required):
+
+   ```
+   /**/*.m3u
+   /**/*.m3u8
+   ```
+4. Trigger a library scan (Dashboard → Scheduled Tasks → *Scan All Libraries*,
+   or it happens on the next nightly). The imported playlists disappear; real
+   `playlist.xml`-backed playlists under `config/data/data/playlists/` are
+   untouched (the pattern only matches `.m3u`/`.m3u8`).
+
 ## Operating
 
 ```sh

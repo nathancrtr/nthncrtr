@@ -40,6 +40,7 @@ External access flow: `<svc>.nthncrtr.com` → Cloudflare DNS (DNS-01 challenge 
     ├── qbittorrent/             # qBit + Gluetun (Proton VPN) sidecar
     ├── sonarr/                  # docker-compose.yml (the *arrs are repo-managed via deploy.sh)
     ├── radarr/                  # docker-compose.yml
+    ├── lidarr/                  # docker-compose.yml (music *arr → imports into /mnt/media/music; Orpheus via Prowlarr)
     ├── prowlarr/                # docker-compose.yml
     ├── nextcloud/               # NC + MariaDB + Redis + cron (Tailscale-only) + secrets.env.example
     ├── jellyfin/                # docker-compose.yml (host-net; /dev/dri HW transcode; public via cloudflared)

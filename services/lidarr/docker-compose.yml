@@ -1,0 +1,81 @@
+# Lidarr — music collection manager. Managed by deploy.sh (sudo ./deploy.sh lidarr).
+#
+# The music-library sibling of Sonarr (TV) / Radarr (movies): it pulls indexers
+# from Prowlarr, hands grabs to qBittorrent (category `music`), and imports the
+# completed releases into /mnt/media/music — the same tree Navidrome scans. So
+# Lidarr-managed albums show up in Navidrome automatically.
+#
+# Before first run on natto (deploy.sh handles dirs idempotently, but for
+# manual bring-up):
+#   mkdir -p /srv/lidarr/config
+#   docker compose -f /srv/lidarr/docker-compose.yml up -d
+#   # Then in the WebUI (https://lidarr.nthncrtr.com — behind Authelia):
+#   #   Settings → Media Management → Add Root Folder: /mnt/media/music
+#   #   Settings → Download Clients → Add qBittorrent: host gluetun, port 8080,
+#   #     category `music` (Lidarr joins qbittorrent_default — see networks).
+#   #   Settings → General → Security → copy the API key to secrets.env
+#   # Indexers come from Prowlarr (add Lidarr as a Prowlarr Application + add
+#   #   the Orpheus indexer there) — see README.md § Orpheus.
+#
+# Downloads: qBit's global save path is /mnt/media/_unsorted/torrents. The
+#   `music` category has an empty save path and qBit auto-TMM is off, so grabs
+#   land flat there; Lidarr imports them into /mnt/media/music/. /mnt/media is
+#   ext4, so "keep seeding" hardlinks the file into the library (one inode, one
+#   copy on disk — not stored twice). See README.md.
+#
+#   (Aside: the tools/orpheus download_available.py side-channel saves OPS
+#   grabs straight into /mnt/media/music under category `wishlist`; that's a
+#   separate manual pipeline and does not collide with Lidarr's `music`
+#   category.)
+#
+# mem_limit: 512m is a deliberate bound on a SHARED hub (~7 GiB Beelink, not
+#   the old 2 GB Pi / SD card). Lidarr idles ~150–250 MB and is not OOM-killed
+#   in practice; the cap protects the other co-resident services. See README.
+#
+# Ports:
+#   8686 — WebUI (matches Caddyfile)
+services:
+  lidarr:
+    image: lscr.io/linuxserver/lidarr:latest
+    container_name: lidarr
+    environment:
+      - PUID=1000
+      - PGID=1000
+      - TZ=America/New_York
+    volumes:
+      - ./config:/config
+      - /mnt/media:/mnt/media
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    networks:
+      # default = lidarr's own net (lidarr_default; Homepage joins it).
+      # arrnet = shared *arr net so Prowlarr (also on arrnet) can reach Lidarr
+      # by name at http://lidarr:8686.
+      # qbittorrent_default = qBittorrent's compose net (created by the
+      # qbittorrent stack — Lidarr attaches as external). Lets the download
+      # client reach gluetun:8080 by name; the 172.23.0.0/16 subnet is
+      # already in qBit's WebUI auth-bypass whitelist, so no second login.
+      # The old host.docker.internal:8080 path was broken when safety rule 9
+      # rebound qBit's WebUI port to 127.0.0.1 (2026-05-18).
+      - default
+      - arrnet
+      - qbittorrent_default
+    ports:
+      # 127.0.0.1 only: the sole intended path is lidarr.nthncrtr.com →
+      # Caddy (native on natto, so localhost) → Authelia. config.xml has
+      # AuthenticationMethod=External (runtime state, not in repo) so Lidarr
+      # renders no login page and trusts the proxy — a 0.0.0.0 publish would
+      # be an unauthenticated LAN open door. API key still guards /api.
+      - "127.0.0.1:8686:8686"
+    restart: unless-stopped
+    mem_limit: 512m
+
+networks:
+  default:
+  # Shared *arr-stack net (Prowlarr↔*arrs). Created idempotently by deploy.sh.
+  arrnet:
+    external: true
+  # Created by the qbittorrent compose project; Lidarr attaches as external
+  # so it can reach gluetun:8080 (qBit shares gluetun's netns).
+  qbittorrent_default:
+    external: true

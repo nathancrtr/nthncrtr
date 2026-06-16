@@ -1553,3 +1553,81 @@ text and can be left. Part A (Jellyfin OpenCL tonemap) is independent — to
 unwind it, revert `encoding.xml` to `EnableVppTonemapping=true` /
 `EnableTonemapping=false` and drop the `DOCKER_MODS` lines from the Jellyfin
 compose.
+
+## Phase 11 — Music collection automation (Lidarr)
+
+### 11.1 Lidarr — automated music management + Orpheus indexer  [SCAFFOLDED — deploy pending operator]
+
+**Goal:** Bring the music library under the same *arr automation the video
+libraries already have. Lidarr is the audio sibling of Sonarr (TV) / Radarr
+(movies): it tracks wanted artists/albums, pulls indexers from Prowlarr —
+including the **Orpheus** (OPS) music tracker — hands grabs to qBittorrent
+(category `music`), and imports completed releases into `/mnt/media/music`, the
+same tree **Navidrome** scans. Net effect: an album added in Lidarr ends up
+playable in Navidrome with no manual file shuffling.
+
+**Repo plumbing (this mission's scaffolding — shipped):**
+1. `services/lidarr/` — `docker-compose.yml` (image
+   `lscr.io/linuxserver/lidarr:latest`, PUID/PGID 1000, port
+   `127.0.0.1:8686:8686`, `/mnt/media` mounted rw, networks `default` +
+   `arrnet` + `qbittorrent_default`, `mem_limit 512m`) + `README.md`. Mirrors
+   the Sonarr/Radarr compose exactly (download *arr → joins qbittorrent_default
+   to reach `gluetun:8080`).
+2. `services/caddy/Caddyfile` — `lidarr.nthncrtr.com` block (`import authelia`
+   + `reverse_proxy 127.0.0.1:8686`), web-admin tier like the other *arrs.
+3. `deploy.sh` — `deploy_lidarr` (mirrors `deploy_radarr`: ensure dirs,
+   `ensure_arrnet`, `compose_up`, verify URL) + `lidarr` added to the default
+   service list and the usage/header doc lists.
+4. `services/homepage/config/services.yaml` — Lidarr tile (`type: lidarr`,
+   `url: http://lidarr:8686`, `key: {{HOMEPAGE_VAR_LIDARR_KEY}}`), on
+   `lidarr_default` like the other *arr widgets;
+   `services/homepage/secrets.env.example` gains `HOMEPAGE_VAR_LIDARR_KEY`.
+5. `CLAUDE.md` — `lidarr/` added to the repo-layout service tree.
+
+**Auth model:** web-admin tier (safety rule 9) — `AuthenticationMethod=External`
+(set in the UI on first run) + `127.0.0.1`-only publish + Authelia forward_auth.
+Not in the cloudflared ingress → **not internet-exposed** (safety rule 8
+untouched).
+
+**Orpheus integration (the "RSS feed"):** added **in Prowlarr**, not pasted
+into Lidarr by hand — keeping Prowlarr the single indexer manager for the *arr
+stack. Prowlarr → Indexers → Add "Orpheus" (Gazelle definition) authed with the
+existing `OPS_API_KEY` (same value as `tools/orpheus/secrets.env`); Prowlarr →
+Apps → Add Lidarr (`http://lidarr:8686` over arrnet, Lidarr API key). Prowlarr
+syncs Orpheus into Lidarr as a Torznab indexer with **RSS sync** on, so new
+matching uploads flow in automatically. Keep the Lidarr app **tag-less** (the
+TAG-SYNC GOTCHA in `services/prowlarr/docker-compose.yml`). Full steps in
+`services/lidarr/README.md` § Orpheus.
+
+**Downloads → `/mnt/media/music`:** root folder is `/mnt/media/music`; the
+`music` qBit category has an empty save path so grabs land in
+`/mnt/media/_unsorted/torrents/` and Lidarr hardlink-imports them into
+`/mnt/media/music/` (ext4 — one inode, keeps seeding without doubling disk).
+Independent of the `tools/orpheus` `wishlist`-category side-channel, which
+already saves straight into `/mnt/media/music`.
+
+**Operator steps to activate (not in repo):**
+- `sudo ./deploy.sh lidarr` (from `/srv/nthncrtr-repo` after `git pull`).
+- Cloudflare **A record** `lidarr / 100.122.71.33 / DNS only` — without it the
+  name doesn't resolve even though Caddy serves it.
+- `sudo ./deploy.sh caddy` (after the A record) → `https://lidarr.nthncrtr.com`
+  reachable on the tailnet via Authelia.
+- In Lidarr: add root folder `/mnt/media/music`; add qBittorrent download
+  client (`gluetun:8080`, category `music`); set Authentication = External;
+  copy the API key into `/srv/homepage/secrets.env` as
+  `HOMEPAGE_VAR_LIDARR_KEY` and `sudo ./deploy.sh homepage`.
+- In Prowlarr: add the Orpheus indexer + add Lidarr as an Application
+  (tag-less). See `services/lidarr/README.md`.
+
+**Success criteria:** `https://lidarr.nthncrtr.com` loads behind Authelia;
+Prowlarr → Lidarr app sync green and the Orpheus indexer appears in Lidarr;
+adding an album drives a grab through qBittorrent (category `music`) that
+imports into `/mnt/media/music/` and becomes visible in Navidrome; the Homepage
+Lidarr tile renders real stats.
+
+**Rollback:** `cd /srv/lidarr && docker compose down`; remove the
+`lidarr.nthncrtr.com` vhost from the Caddyfile and `deploy_lidarr` + the
+`lidarr` list entries from `deploy.sh`, redeploy `caddy`; drop the Lidarr tile
+from `services.yaml`; delete the Cloudflare `lidarr` A record. Remove the
+Orpheus indexer + Lidarr app from Prowlarr if undesired. Imported music under
+`/mnt/media/music` is left in place (Navidrome keeps serving it).

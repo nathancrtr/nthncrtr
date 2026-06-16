@@ -68,6 +68,18 @@
           url: http://sonarr:8989
           key: '{{HOMEPAGE_VAR_SONARR_KEY}}'
 
+    - Lidarr:
+        href: https://lidarr.nthncrtr.com
+        icon: lidarr.png
+        server: my-docker
+        container: lidarr
+        widget:
+          type: lidarr
+          # Container name on the shared lidarr_default net (127.0.0.1-only
+          # publish — see the Radarr note above).
+          url: http://lidarr:8686
+          key: '{{HOMEPAGE_VAR_LIDARR_KEY}}'
+
     - Prowlarr:
         href: https://prowlarr.nthncrtr.com
         icon: prowlarr.png

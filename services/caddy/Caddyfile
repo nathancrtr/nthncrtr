@@ -67,6 +67,13 @@ sonarr.nthncrtr.com {
 	reverse_proxy 127.0.0.1:8989
 }
 
+# Music (Lidarr) — imports albums into /mnt/media/music (Navidrome's library).
+# Web-admin tier like the other *arrs: Authelia + 127.0.0.1-only publish.
+lidarr.nthncrtr.com {
+	import authelia
+	reverse_proxy 127.0.0.1:8686
+}
+
 # Indexer manager
 prowlarr.nthncrtr.com {
 	import authelia

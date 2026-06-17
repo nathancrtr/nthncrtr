@@ -1556,15 +1556,37 @@ compose.
 
 ## Phase 11 — Music collection automation (Lidarr)
 
-### 11.1 Lidarr — automated music management + Orpheus indexer  [SCAFFOLDED — deploy pending operator]
+### 11.1 Lidarr — automated music management + Orpheus indexer  [RE-ARCHITECTED read-only after data-loss — deploy pending operator]
+
+> **⚠️ Incident & re-architecture (2026-06-16).** During first-run setup, a
+> Lidarr import (copy into `Artist/Album`, delete original, **no Recycle Bin**)
+> **permanently deleted 6,780 FLACs across 509 albums** while one was playing.
+> **Recovery:** the originals were still seeding in qBittorrent (same infohashes,
+> just files deleted on disk), so a **force-recheck of 508 torrents** made qBit
+> re-download them in place — **507/508 restored (161.6 GiB)**; 2 dead-swarm
+> albums (Florence Sinclair, Radiohead *Amnesiac* vinyl rip) remain for manual
+> re-grab. OPS ratio held the 0.60 floor (0.82 → 0.65; 34 GiB of the re-download
+> was freeleech-token-covered). Tooling lives in `tools/orpheus/`.
+>
+> **Re-architecture (this is now the design):** `/mnt/media` is mounted **`:ro`**
+> into Lidarr — it **physically cannot write/delete** media. Lidarr is now a
+> **monitor + search-via-Prowlarr + grab → qBit** front-end only; **qBit is the
+> sole writer** into `/mnt/media/music`. It does **NOT** import. Its root folder
+> is a writable decoy `/scratch` (`/srv/lidarr/scratch`), because Lidarr rejects
+> a read-only root on add. In-app Recycle Bin + Rename-off + Import-off are
+> belt-and-suspenders layers. Full rationale: `services/lidarr/README.md`
+> § Read-only hardening. The prose below predates this — where it says
+> "imports / rw mount / root folder `/mnt/media/music` / Authentication=External,"
+> read the hardening section instead.
 
 **Goal:** Bring the music library under the same *arr automation the video
 libraries already have. Lidarr is the audio sibling of Sonarr (TV) / Radarr
-(movies): it tracks wanted artists/albums, pulls indexers from Prowlarr —
-including the **Orpheus** (OPS) music tracker — hands grabs to qBittorrent
-(category `music`), and imports completed releases into `/mnt/media/music`, the
-same tree **Navidrome** scans. Net effect: an album added in Lidarr ends up
-playable in Navidrome with no manual file shuffling.
+(movies): it tracks wanted artists/albums and pulls indexers from Prowlarr —
+including the **Orpheus** (OPS) music tracker — and hands grabs to qBittorrent
+(category `music`), which writes completed releases into `/mnt/media/music`, the
+same tree **Navidrome** scans. Net effect: an album wanted in Lidarr ends up
+playable in Navidrome with no manual file shuffling — and (post-incident) with
+no risk to the existing library.
 
 **Repo plumbing (this mission's scaffolding — shipped):**
 1. `services/lidarr/` — `docker-compose.yml` (image

@@ -347,8 +347,12 @@ deploy_lidarr() {
   log "lidarr"
   local CHANGED=0
   (( DRY_RUN )) || {
-    [[ -d /srv/lidarr ]]        || { install -d -o nthncrtr -g nthncrtr -m 0755 /srv/lidarr;        note "created /srv/lidarr"; }
-    [[ -d /srv/lidarr/config ]] || { install -d -o nthncrtr -g nthncrtr -m 0755 /srv/lidarr/config; note "created /srv/lidarr/config"; }
+    [[ -d /srv/lidarr ]]         || { install -d -o nthncrtr -g nthncrtr -m 0755 /srv/lidarr;         note "created /srv/lidarr"; }
+    [[ -d /srv/lidarr/config ]]  || { install -d -o nthncrtr -g nthncrtr -m 0755 /srv/lidarr/config;  note "created /srv/lidarr/config"; }
+    # Writable root-folder formality: /mnt/media is mounted :ro into Lidarr
+    # (data-loss hardening), so Lidarr needs a writable path to pass its
+    # root-folder writability check. No media lives here. See the compose header.
+    [[ -d /srv/lidarr/scratch ]] || { install -d -o nthncrtr -g nthncrtr -m 0755 /srv/lidarr/scratch; note "created /srv/lidarr/scratch"; }
   }
   install_file "$REPO_ROOT/services/lidarr/docker-compose.yml" /srv/lidarr/docker-compose.yml
   (( DRY_RUN )) && return 0

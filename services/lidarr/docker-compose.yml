@@ -1,27 +1,44 @@
 # Lidarr — music collection manager. Managed by deploy.sh (sudo ./deploy.sh lidarr).
 #
-# The music-library sibling of Sonarr (TV) / Radarr (movies): it pulls indexers
-# from Prowlarr, hands grabs to qBittorrent (category `music`), and imports the
-# completed releases into /mnt/media/music — the same tree Navidrome scans. So
-# Lidarr-managed albums show up in Navidrome automatically.
+# *** READ-ONLY MEDIA MOUNT — this is a hard safety boundary, not a preference. ***
+# On 2026-06-16 a Lidarr import (copy-into-Artist/Album, then delete original,
+# with no Recycle Bin) PERMANENTLY deleted 6,780 FLACs across 509 albums.
+# Recovery took a full re-download from OPS. To make a repeat IMPOSSIBLE at the
+# kernel level, /mnt/media is now mounted ':ro' here — Lidarr physically cannot
+# write, rename, move, or delete anything in the media tree. Do not revert this
+# to a writable mount without an explicit operator decision (and even then, only
+# with Recycle Bin on). See README.md § Read-only hardening and CLAUDE.md.
+#
+# Operating model (changed from the import-based *arr default): Lidarr is a
+# monitor + search-via-Prowlarr + hand-to-qBittorrent front-end only. It does
+# NOT import. qBit (its own writable mount; never the culprit) is the SOLE
+# writer into /mnt/media/music — the same tree Navidrome scans — so new grabs
+# still appear in Navidrome. Completed Download Handling stays OFF; with a :ro
+# mount Lidarr couldn't import anyway.
 #
 # Before first run on natto (deploy.sh handles dirs idempotently, but for
 # manual bring-up):
-#   mkdir -p /srv/lidarr/config
+#   mkdir -p /srv/lidarr/config /srv/lidarr/scratch
 #   docker compose -f /srv/lidarr/docker-compose.yml up -d
 #   # Then in the WebUI (https://lidarr.nthncrtr.com — behind Authelia):
-#   #   Settings → Media Management → Add Root Folder: /mnt/media/music
+#   #   Settings → Media Management → Add Root Folder: /scratch
+#   #     (NOT /mnt/media/music — that's read-only and Lidarr's add-time
+#   #      writability check would reject it. /scratch is a writable formality;
+#   #      no media is stored there. See README § Read-only hardening.)
+#   #   Settings → Media Management → Recycle Bin = /scratch/recycle, and turn
+#   #     OFF "Rename Tracks" + "Completed Download Handling" import (belt-and-
+#   #     suspenders — these only bite if the mount is ever made writable).
 #   #   Settings → Download Clients → Add qBittorrent: host gluetun, port 8080,
 #   #     category `music` (Lidarr joins qbittorrent_default — see networks).
 #   #   Settings → General → Security → copy the API key to secrets.env
 #   # Indexers come from Prowlarr (add Lidarr as a Prowlarr Application + add
 #   #   the Orpheus indexer there) — see README.md § Orpheus.
 #
-# Downloads: qBit's global save path is /mnt/media/_unsorted/torrents. The
-#   `music` category has an empty save path and qBit auto-TMM is off, so grabs
-#   land flat there; Lidarr imports them into /mnt/media/music/. /mnt/media is
-#   ext4, so "keep seeding" hardlinks the file into the library (one inode, one
-#   copy on disk — not stored twice). See README.md.
+# Downloads: qBit's `music` category has an empty save path and auto-TMM off, so
+#   Lidarr-issued grabs land in qBit's global save path; qBit (not Lidarr) puts
+#   the completed files where they belong. Because Lidarr can't import, point
+#   the `music` category's save path at /mnt/media/music in qBit if you want
+#   grabs to land in the library directly.
 #
 #   (Aside: the tools/orpheus download_available.py side-channel saves OPS
 #   grabs straight into /mnt/media/music under category `wishlist`; that's a
@@ -44,7 +61,14 @@ services:
       - TZ=America/New_York
     volumes:
       - ./config:/config
-      - /mnt/media:/mnt/media
+      # READ-ONLY: the kernel-enforced guarantee that Lidarr can never again
+      # delete or rewrite library files (2026-06-16 incident — see header).
+      - /mnt/media:/mnt/media:ro
+      # Writable scratch ONLY to satisfy Lidarr's root-folder writability check
+      # (a :ro path is rejected on add). Add /scratch as the root folder in the
+      # UI; no media is stored here — qBit writes the real files into
+      # /mnt/media/music. See README § Read-only hardening.
+      - /srv/lidarr/scratch:/scratch
     extra_hosts:
       - "host.docker.internal:host-gateway"
     networks:
@@ -62,10 +86,12 @@ services:
       - qbittorrent_default
     ports:
       # 127.0.0.1 only: the sole intended path is lidarr.nthncrtr.com →
-      # Caddy (native on natto, so localhost) → Authelia. config.xml has
-      # AuthenticationMethod=External (runtime state, not in repo) so Lidarr
-      # renders no login page and trusts the proxy — a 0.0.0.0 publish would
-      # be an unauthenticated LAN open door. API key still guards /api.
+      # Caddy (native on natto, so localhost) → Authelia. In the UI set
+      # Authentication = Forms/Basic + Authentication Required = "Disabled for
+      # Local Addresses" (current Lidarr removed the old `External` option;
+      # this is its equivalent) so the loopback/proxied path renders no login
+      # and trusts the proxy — a 0.0.0.0 publish would be an unauthenticated
+      # LAN open door. API key still guards /api.
       - "127.0.0.1:8686:8686"
     restart: unless-stopped
     mem_limit: 512m

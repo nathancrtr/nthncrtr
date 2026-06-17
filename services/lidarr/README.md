@@ -3,41 +3,74 @@
 Music collection manager — the audio sibling of Sonarr (TV) / Radarr (movies).
 Container `lidarr`, WebUI on `8686`, behind Caddy + Authelia at
 `https://lidarr.nthncrtr.com`. Pulls indexers from Prowlarr (including the
-**Orpheus** music tracker), hands grabs to qBittorrent (category `music`), and
-imports completed releases into `/mnt/media/music/` — **the same tree Navidrome
-scans**, so Lidarr-managed albums appear in Navidrome automatically.
+**Orpheus** music tracker) and hands grabs to qBittorrent (category `music`).
 
-> Status: **scaffolded** (repo plumbing shipped; operator activation pending —
-> see WORKLIST Phase 11). The "how it wires up" table below is the intended
-> shape; the runtime config (root folder, download client, API key,
-> Authentication=External) is set in the UI on first run.
+> ## ⚠️ Read-only by design — Lidarr does NOT import or manage files
+>
+> On **2026-06-16**, a Lidarr import deleted **6,780 FLACs across 509 albums**
+> permanently (copy-into-`Artist/Album`, delete original, no Recycle Bin).
+> Recovery was a full re-download from OPS. As a result `/mnt/media` is mounted
+> **`:ro`** here — Lidarr **physically cannot write, rename, move, or delete**
+> anything in the media tree. It runs as a **monitor + search + grab** front-end
+> only: it finds wanted releases via Prowlarr and hands them to qBittorrent.
+> **qBittorrent** (its own writable mount, never the culprit) is the *sole*
+> writer into `/mnt/media/music` — the tree Navidrome scans — so new grabs still
+> appear in Navidrome. See **§ Read-only hardening** below. This matches the
+> long-standing workflow (qBit writes directly into the library; no move step).
 
 ## How it wires up (matches the other *arrs)
 
 | Thing | Reality on natto |
 |---|---|
 | Container / image | `lidarr` / `lscr.io/linuxserver/lidarr:latest`, branch `main` |
-| WebUI / auth | `8686`; set `AuthenticationMethod=External` in Settings → General → Security — no in-app login page, trusts the Authelia-fronted proxy (the API key still guards `/api`). The full two-halves model (External + `127.0.0.1` publish + `arrnet`) is **CLAUDE.md safety rule 9**. |
-| Root folder | `/mnt/media/music` (where Navidrome scans) |
+| WebUI / auth | `8686`; Authentication = Forms/Basic + **Authentication Required = "Disabled for Local Addresses"** (Settings → General → Security). Current Lidarr removed the old `External` option; this is its equivalent — the loopback/proxied path bypasses the in-app login and trusts the Authelia-fronted proxy (the API key still guards `/api`). The two-halves model (this + `127.0.0.1` publish + `arrnet`) is **CLAUDE.md safety rule 9**. |
+| Root folder | **`/scratch`** (writable formality — `/srv/lidarr/scratch`). NOT `/mnt/media/music`: that's mounted `:ro` and Lidarr's add-time writability check rejects a read-only folder. No media is stored in `/scratch`. See § Read-only hardening. |
 | Download client | qBittorrent at `gluetun:8080` (qBit shares gluetun's netns), **category `music`**. Lidarr joins `qbittorrent_default` so it reaches gluetun by name; the 127.0.0.1 host-publish path is dead (safety rule 9). |
 | Indexers | From **Prowlarr** — add Lidarr as a Prowlarr Application + add the Orpheus indexer there (§ Orpheus below). |
 | API key | `/srv/lidarr/config/config.xml` (`<ApiKey>`); mirrored to `HOMEPAGE_VAR_LIDARR_KEY` in `/srv/homepage/secrets.env` |
-| Mounts | `./config:/config`, `/mnt/media:/mnt/media`, `mem_limit: 512m` |
+| Mounts | `./config:/config`, **`/mnt/media:/mnt/media:ro`** (read-only), `/srv/lidarr/scratch:/scratch` (writable root-folder formality), `mem_limit: 512m` |
+
+## Read-only hardening
+
+The single, kernel-level guarantee that the 2026-06-16 data loss cannot recur,
+plus the in-app belt-and-suspenders layers behind it:
+
+1. **`/mnt/media` mounted `:ro` (primary).** The OS denies every write syscall
+   from the Lidarr container against the media tree. No Lidarr bug,
+   misconfiguration, or future "organize library" action can delete or rewrite a
+   file. This is structural — it holds even if every setting below is wrong.
+2. **Writable root folder is a decoy.** Lidarr requires a *writable* root folder
+   (it tests write access when you add one), so it gets `/scratch`
+   (`/srv/lidarr/scratch`), a small dir holding no media. The real library at
+   `/mnt/media/music` is visible to Lidarr only read-only and is never its root.
+3. **In-app guards (set in the UI; runtime state, not in repo).** Effective only
+   if the mount is ever reverted to writable, but configured anyway:
+   - **Recycle Bin** = `/scratch/recycle` — deletes become *recoverable* moves,
+     never permanent `unlink`. (Its absence is precisely what turned the
+     incident into permanent loss.)
+   - **Completed Download Handling → Import** = **OFF** — Lidarr never adopts/
+     moves qBit's completed files. qBit owns placement.
+   - **Rename Tracks** = **OFF**, **Unmonitor Deleted Tracks** = OFF — no
+     rewrite/rename passes over the library.
+
+**Consequence (accepted trade-off):** Lidarr can't import, organize, or even
+match your existing library (its root is `/scratch`, not the music tree), so it
+will treat owned albums as "missing" and may re-issue grabs — qBit dedupes those
+by infohash (HTTP 409 Conflict, harmless). Lidarr's real value here is
+*discovery*: monitor wanted artists, RSS/search Orpheus via Prowlarr, hand grabs
+to qBit. To unwind hardening (only as an explicit operator decision), revert the
+mount to `/mnt/media/music` rw **and** turn the Recycle Bin on first.
 
 ### Where downloaded files land
 
-Same model as Sonarr/Radarr: qBit's global save path is
-`/mnt/media/_unsorted/torrents`, the `music` category has an **empty** save
-path, and Automatic Torrent Management is **off** — so music grabs land flat in
-`/mnt/media/_unsorted/torrents/`, and Lidarr imports from there into
-`/mnt/media/music/`. `/mnt/media` is **ext4**, so "keep seeding" hardlinks each
-imported track into the library (one inode, one copy on disk). See
-`runbooks/media-layout.md` § "Hardlinks on import".
+qBittorrent — not Lidarr — places files. The `music` category should have its
+save path set to `/mnt/media/music` in qBit (Automatic Torrent Management off),
+so Lidarr-issued grabs land in the library that Navidrome scans. `/mnt/media` is
+ext4, so seeding the same file costs one inode (no double-storage).
 
 > The `tools/orpheus/download_available.py` side-channel is a *separate* manual
 > pipeline: it saves OPS wishlist grabs straight into `/mnt/media/music` under
-> qBit category `wishlist`. It does not collide with Lidarr's `music` category
-> — different category, and Lidarr only adopts downloads it issued itself.
+> qBit category `wishlist`. It does not collide with Lidarr's `music` category.
 
 ## Orpheus (OPS) — the music tracker, via Prowlarr
 
@@ -83,14 +116,19 @@ Then:
 2. `sudo ./deploy.sh caddy` (after the A record exists) → reload the
    `lidarr.nthncrtr.com` vhost.
 3. In Lidarr (https://lidarr.nthncrtr.com, behind Authelia):
-   - **Settings → Media Management → Root Folders**: add `/mnt/media/music`.
+   - **Settings → Media Management → Root Folders**: add **`/scratch`** (NOT
+     `/mnt/media/music` — read-only, rejected on add; § Read-only hardening).
+   - **Settings → Media Management**: set **Recycle Bin** = `/scratch/recycle`;
+     turn **OFF** "Rename Tracks" and Completed Download Handling **Import**.
    - **Settings → Download Clients**: add qBittorrent — host `gluetun`, port
      `8080`, category `music`. Lidarr joins `qbittorrent_default` (subnet
      `172.23.0.0/16`, already in qBit's `WebUI\AuthSubnetWhitelist`), so no
      second login. (The `host.docker.internal:8080` path is dead — safety
      rule 9.)
-   - **Settings → General → Security**: set Authentication = **External** (the
-     two-halves model — safety rule 9), then copy the API key and on natto:
+   - **Settings → General → Security**: set Authentication = **Forms/Basic** +
+     **Authentication Required = "Disabled for Local Addresses"** (current Lidarr
+     dropped the old `External` option; this is its equivalent — the
+     two-halves model, safety rule 9), then copy the API key and on natto:
      ```sh
      sudo -e /srv/homepage/secrets.env   # add HOMEPAGE_VAR_LIDARR_KEY=<paste>
      cd /srv/nthncrtr-repo && sudo ./deploy.sh homepage
@@ -118,8 +156,9 @@ Wanted → Missing search to recover orphaned grabs. Full incident write-up:
 |---|---|
 | Compose | `/srv/lidarr/docker-compose.yml` |
 | Config / DB | `/srv/lidarr/config/` |
-| Music library | `/mnt/media/music/` (shared with Navidrome) |
-| Grabs land in | `/mnt/media/_unsorted/torrents/` (qBit global default) |
+| Root folder (decoy) | `/srv/lidarr/scratch` → `/scratch` in-container (writable; no media) |
+| Music library | `/mnt/media/music/` — **read-only** to Lidarr; shared with Navidrome; written only by qBit |
+| Grabs land in | `/mnt/media/music/` via qBit's `music` category (qBit places files, not Lidarr) |
 | Container | `lidarr` |
 
 Ports: `8686` (WebUI only — no peer port; torrent traffic is qBit's, via the VPN).

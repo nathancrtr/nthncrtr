@@ -286,10 +286,10 @@ def main() -> int:
         "rym_id", "artist", "album", "release_type",
         "ops_group_id", "ops_group_name", "ops_artist", "ops_year",
         "ops_torrent_id", "format", "encoding", "media", "log_score",
-        "seeders", "size_mb", "match_score",
+        "seeders", "size_mb", "match_score", "rym_url",
     ]
     novel_fields = ["rym_id", "artist", "album", "release_type", "rym_url", "reason"]
-    review_fields = avail_fields + ["rym_url"]
+    review_fields = list(avail_fields)
 
     with avail_path.open("w", encoding="utf-8", newline="") as af, \
          novel_path.open("w", encoding="utf-8", newline="") as nf, \
@@ -339,6 +339,7 @@ def main() -> int:
                 "seeders": chosen.get("seeders", 0),
                 "size_mb": round((chosen.get("size", 0) or 0) / 1024 / 1024, 1),
                 "match_score": round(score, 3),
+                "rym_url": row.get("rym_url", ""),
             }
             if score >= args.match_threshold:
                 aw.writerow(out)
@@ -347,7 +348,7 @@ def main() -> int:
                       f"{out['encoding']} {out['media']}, seeders={out['seeders']}, "
                       f"score {score:.2f})", file=sys.stderr)
             else:
-                rw.writerow({**out, "rym_url": row["rym_url"]})
+                rw.writerow(out)
                 n_review += 1
                 print(f"  → review (low confidence, score {score:.2f})", file=sys.stderr)
 

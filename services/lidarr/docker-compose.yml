@@ -21,10 +21,13 @@
 #   mkdir -p /srv/lidarr/config /srv/lidarr/scratch
 #   docker compose -f /srv/lidarr/docker-compose.yml up -d
 #   # Then in the WebUI (https://lidarr.nthncrtr.com — behind Authelia):
-#   #   Settings → Media Management → Add Root Folder: /scratch
-#   #     (NOT /mnt/media/music — that's read-only and Lidarr's add-time
-#   #      writability check would reject it. /scratch is a writable formality;
-#   #      no media is stored there. See README § Read-only hardening.)
+#   #   Settings → Media Management → Root Folder: keep /mnt/media/music. It is
+#   #     mounted read-only, which Lidarr tolerates for an EXISTING root (shows a
+#   #     benign "MountCheck: read-only" health error — that's the lockdown
+#   #     working) and keeps Lidarr library-aware. /scratch exists only as a
+#   #     writable fallback IF you ever delete and re-add the root from scratch
+#   #     (Lidarr's add-time writability check rejects a :ro path). See README
+#   #     § Read-only hardening.
 #   #   Settings → Media Management → Recycle Bin = /scratch/recycle, and turn
 #   #     OFF "Rename Tracks" + "Completed Download Handling" import (belt-and-
 #   #     suspenders — these only bite if the mount is ever made writable).

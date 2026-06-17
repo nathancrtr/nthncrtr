@@ -1556,7 +1556,7 @@ compose.
 
 ## Phase 11 — Music collection automation (Lidarr)
 
-### 11.1 Lidarr — automated music management + Orpheus indexer  [RE-ARCHITECTED read-only after data-loss — deploy pending operator]
+### 11.1 Lidarr — automated music management + Orpheus indexer  [DEPLOYED read-only (verified 2026-06-17); Orpheus indexer wiring in Prowlarr still pending]
 
 > **⚠️ Incident & re-architecture (2026-06-16).** During first-run setup, a
 > Lidarr import (copy into `Artist/Album`, delete original, **no Recycle Bin**)
@@ -1572,8 +1572,10 @@ compose.
 > into Lidarr — it **physically cannot write/delete** media. Lidarr is now a
 > **monitor + search-via-Prowlarr + grab → qBit** front-end only; **qBit is the
 > sole writer** into `/mnt/media/music`. It does **NOT** import. Its root folder
-> is a writable decoy `/scratch` (`/srv/lidarr/scratch`), because Lidarr rejects
-> a read-only root on add. In-app Recycle Bin + Rename-off + Import-off are
+> stays `/mnt/media/music` read-only — Lidarr tolerates an existing `:ro` root
+> and stays library-aware (benign `MountCheck: read-only` health error); the
+> writable `/scratch` (`/srv/lidarr/scratch`) is only a fallback for a
+> from-scratch root re-add. In-app Recycle Bin + Rename-off + Import-off are
 > belt-and-suspenders layers. Full rationale: `services/lidarr/README.md`
 > § Read-only hardening. The prose below predates this — where it says
 > "imports / rw mount / root folder `/mnt/media/music` / Authentication=External,"

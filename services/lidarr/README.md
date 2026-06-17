@@ -24,7 +24,7 @@ Container `lidarr`, WebUI on `8686`, behind Caddy + Authelia at
 |---|---|
 | Container / image | `lidarr` / `lscr.io/linuxserver/lidarr:latest`, branch `main` |
 | WebUI / auth | `8686`; Authentication = Forms/Basic + **Authentication Required = "Disabled for Local Addresses"** (Settings → General → Security). Current Lidarr removed the old `External` option; this is its equivalent — the loopback/proxied path bypasses the in-app login and trusts the Authelia-fronted proxy (the API key still guards `/api`). The two-halves model (this + `127.0.0.1` publish + `arrnet`) is **CLAUDE.md safety rule 9**. |
-| Root folder | **`/scratch`** (writable formality — `/srv/lidarr/scratch`). NOT `/mnt/media/music`: that's mounted `:ro` and Lidarr's add-time writability check rejects a read-only folder. No media is stored in `/scratch`. See § Read-only hardening. |
+| Root folder | **`/mnt/media/music`** kept read-only — Lidarr tolerates an *existing* `:ro` root (`accessible=True`, shows a benign `MountCheck: read-only` health error) and stays library-aware. `/scratch` (`/srv/lidarr/scratch`) is a writable fallback only for a from-scratch re-add (Lidarr's add-time writability check rejects a `:ro` path). See § Read-only hardening. |
 | Download client | qBittorrent at `gluetun:8080` (qBit shares gluetun's netns), **category `music`**. Lidarr joins `qbittorrent_default` so it reaches gluetun by name; the 127.0.0.1 host-publish path is dead (safety rule 9). |
 | Indexers | From **Prowlarr** — add Lidarr as a Prowlarr Application + add the Orpheus indexer there (§ Orpheus below). |
 | API key | `/srv/lidarr/config/config.xml` (`<ApiKey>`); mirrored to `HOMEPAGE_VAR_LIDARR_KEY` in `/srv/homepage/secrets.env` |
@@ -39,10 +39,15 @@ plus the in-app belt-and-suspenders layers behind it:
    from the Lidarr container against the media tree. No Lidarr bug,
    misconfiguration, or future "organize library" action can delete or rewrite a
    file. This is structural — it holds even if every setting below is wrong.
-2. **Writable root folder is a decoy.** Lidarr requires a *writable* root folder
-   (it tests write access when you add one), so it gets `/scratch`
-   (`/srv/lidarr/scratch`), a small dir holding no media. The real library at
-   `/mnt/media/music` is visible to Lidarr only read-only and is never its root.
+2. **Root folder is the real library, kept read-only.** Lidarr's root stays
+   `/mnt/media/music`. Lidarr tolerates an *existing* read-only root
+   (`accessible=True`; it raises a benign `MountCheck: ... read-only` health
+   error — that error *is* the lockdown, working) and this keeps Lidarr
+   library-aware: it knows what you own, won't re-grab duplicates, and reports
+   real missing-album status. The catch is only on *adding* a root: Lidarr's
+   add-time writability check rejects a `:ro` path, so a writable `/scratch`
+   (`/srv/lidarr/scratch`, holds no media) is mounted as a fallback for that one
+   case — delete-and-re-add the root → point it at `/scratch`.
 3. **In-app guards (set in the UI; runtime state, not in repo).** Effective only
    if the mount is ever reverted to writable, but configured anyway:
    - **Recycle Bin** = `/scratch/recycle` — deletes become *recoverable* moves,
@@ -53,13 +58,14 @@ plus the in-app belt-and-suspenders layers behind it:
    - **Rename Tracks** = **OFF**, **Unmonitor Deleted Tracks** = OFF — no
      rewrite/rename passes over the library.
 
-**Consequence (accepted trade-off):** Lidarr can't import, organize, or even
-match your existing library (its root is `/scratch`, not the music tree), so it
-will treat owned albums as "missing" and may re-issue grabs — qBit dedupes those
-by infohash (HTTP 409 Conflict, harmless). Lidarr's real value here is
-*discovery*: monitor wanted artists, RSS/search Orpheus via Prowlarr, hand grabs
-to qBit. To unwind hardening (only as an explicit operator decision), revert the
-mount to `/mnt/media/music` rw **and** turn the Recycle Bin on first.
+**Consequence (accepted trade-off):** Lidarr can't import, organize, rename, or
+delete — it's a *discovery* tool: monitor wanted artists, RSS/search Orpheus via
+Prowlarr, hand grabs to qBit (which places the files). Because the root is the
+real library (read-only), Lidarr stays library-aware, so it won't churn through
+duplicate grabs. The standing cost is the permanent `MountCheck: read-only`
+health error, which is expected and benign. To unwind hardening (only as an
+explicit operator decision), revert the mount to `/mnt/media/music` rw **and**
+turn the Recycle Bin on first.
 
 ### Where downloaded files land
 
@@ -116,8 +122,11 @@ Then:
 2. `sudo ./deploy.sh caddy` (after the A record exists) → reload the
    `lidarr.nthncrtr.com` vhost.
 3. In Lidarr (https://lidarr.nthncrtr.com, behind Authelia):
-   - **Settings → Media Management → Root Folders**: add **`/scratch`** (NOT
-     `/mnt/media/music` — read-only, rejected on add; § Read-only hardening).
+   - **Settings → Media Management → Root Folders**: keep **`/mnt/media/music`**
+     (read-only; Lidarr tolerates the existing root and stays library-aware —
+     expect a benign `MountCheck: read-only` health error). Only if you ever
+     delete and re-add it, point the new root at `/scratch` (§ Read-only
+     hardening).
    - **Settings → Media Management**: set **Recycle Bin** = `/scratch/recycle`;
      turn **OFF** "Rename Tracks" and Completed Download Handling **Import**.
    - **Settings → Download Clients**: add qBittorrent — host `gluetun`, port
@@ -156,7 +165,8 @@ Wanted → Missing search to recover orphaned grabs. Full incident write-up:
 |---|---|
 | Compose | `/srv/lidarr/docker-compose.yml` |
 | Config / DB | `/srv/lidarr/config/` |
-| Root folder (decoy) | `/srv/lidarr/scratch` → `/scratch` in-container (writable; no media) |
+| Root folder | `/mnt/media/music/` (read-only; Lidarr's library-aware root) |
+| Root-folder fallback | `/srv/lidarr/scratch` → `/scratch` (writable; only for a from-scratch re-add; no media) |
 | Music library | `/mnt/media/music/` — **read-only** to Lidarr; shared with Navidrome; written only by qBit |
 | Grabs land in | `/mnt/media/music/` via qBit's `music` category (qBit places files, not Lidarr) |
 | Container | `lidarr` |

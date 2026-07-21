@@ -24,6 +24,28 @@ Subdirectories of `_unsorted/`:
 - `from-mnt-media-root/` — files moved out of `/mnt/media/` itself
 - `from-mnt-media-music/` — files moved out of `/mnt/media/music/`'s top level (everything except the actual music tree, which was nested at `/mnt/media/music/music/`)
 
+## Video torrents: never save/seed directly inside `video/tv`
+
+Lesson from 2026-07-20. A batch of TV torrents had qBit save paths pointing
+straight at `/mnt/media/video/tv`, so each release-named folder
+(`Show.S01.2160p...-GRP/`) sat beside the Sonarr-managed series folder
+(`Show Name/Season 1/`) holding hardlinks of the same files. Jellyfin treats
+every top-level folder as a series → the same show appeared **twice** (one
+copy often with a garbled release-name title). Two rules follow:
+
+- **Grabs go through Sonarr**: qBit saves to `_unsorted/torrents`, Sonarr
+  hardlink-imports into `video/tv/<Series>/`. If a torrent must seed
+  long-term, relocate it to `seed-only/` with qBit "set location" — same
+  filesystem, so it's a rename: hardlinks into the Sonarr folder survive and
+  the seed keeps running (same trick as the music seed-only pattern above).
+- **Removing a show can only happen via Sonarr** (or a shell on natto).
+  Jellyfin mounts `video/` **read-only** — deleting in the Jellyfin UI drops
+  the DB item but leaves the files, and the next library scan resurrects the
+  show. Unmonitor + delete files in Sonarr (its `/mnt/media` mount is rw),
+  then let Jellyfin rescan. Sonarr keeps an empty series folder for shows it
+  still tracks; `rmdir` it if you don't want an empty series tile in
+  Jellyfin (Sonarr recreates it on the next import).
+
 ## Why this layout
 
 - `music/` and `video/` are clean siblings, so Jellyfin and Navidrome get exactly-scoped bind mounts (no scanning irrelevant binaries, no cross-contamination).

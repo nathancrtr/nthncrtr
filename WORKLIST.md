@@ -1408,7 +1408,7 @@ repo, `sudo ./deploy.sh qbittorrent`. Same caveat as any qBit stack
 recreate: in-flight *arr grabs without metadata get orphaned and need
 Wanted→Missing re-trigger (per `services/qbittorrent/README.md`).
 
-### 8.4 Move Immich library `/srv` → `/mnt/media` (root SSD hit 0B free)  [IN PROGRESS — 2026-07-21]
+### 8.4 Move Immich library `/srv` → `/mnt/media` (root SSD hit 0B free)  [DONE — 2026-07-21]
 
 **Why this exists.** The capacity caveat recorded in 8.1 came true on
 2026-07-21: the 37G Immich library plus an 82G in-flight qBit download
@@ -1442,6 +1442,17 @@ free; the Mad Men torrent completes and auto-moves to `/mnt/media`.
 `services/backup/backup.sh` (drop the now-moot library exclude),
 `services/immich/README.md`, `runbooks/media-layout.md` (new top-level
 `immich/` subdir + storage-model exception), `CLAUDE.md`.
+
+**Outcome (2026-07-21):** copy verified byte-complete before delete
+(rsync dry-run itemize: zero differences; 26,278 files both sides). After
+`rm -rf /srv/immich/library` + `deploy.sh immich`: `/` at 36G free, all
+three Immich containers healthy (postgres crash-loop gone),
+`photos.nthncrtr.com/api/server/ping` → 200. The stalled torrent needed a
+manual kick — disk-full had put it in qBit **error** state, which does not
+auto-resume; note the v5 API endpoint is `torrents/start` (the old
+`torrents/resume` 404s). Resumed → completed to 100% → auto-moved to
+`/mnt/media/_unsorted/torrents` for Sonarr import, freeing the 82G
+staging copy from `/` as well (~117G free once the move drains).
 
 ## Phase 9 — Self-hosted note-taking (Memos)
 

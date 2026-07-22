@@ -11,8 +11,10 @@
 #
 # Excluded (handled out-of-band — see EXCLUDES below):
 #   /srv/nextcloud/{data,db}       — bulk user data + live MariaDB datadir
-#   /srv/immich/{library,db}       — bulk photo/video library + live postgres
-#                                     datadir
+#   /srv/immich/db                 — live postgres datadir (the photo/video
+#                                     library moved to /mnt/media/immich/
+#                                     library on 2026-07-21, outside the tar's
+#                                     scope entirely)
 # Each excluded service's DB is captured logically (mariadb-dump / pg_dumpall)
 # into a *.sql.gz alongside its compose dir, which IS captured.
 #
@@ -50,7 +52,6 @@ SOURCES=(
 EXCLUDES=(
   --exclude=/srv/nextcloud/data
   --exclude=/srv/nextcloud/db
-  --exclude=/srv/immich/library
   --exclude=/srv/immich/db
 )
 

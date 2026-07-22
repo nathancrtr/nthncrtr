@@ -1408,6 +1408,41 @@ repo, `sudo ./deploy.sh qbittorrent`. Same caveat as any qBit stack
 recreate: in-flight *arr grabs without metadata get orphaned and need
 Wanted→Missing re-trigger (per `services/qbittorrent/README.md`).
 
+### 8.4 Move Immich library `/srv` → `/mnt/media` (root SSD hit 0B free)  [IN PROGRESS — 2026-07-21]
+
+**Why this exists.** The capacity caveat recorded in 8.1 came true on
+2026-07-21: the 37G Immich library plus an 82G in-flight qBit download
+(Mad Men S03 2160p, staging on `/srv/qbit-incomplete` by design — see
+`services/qbittorrent/docker-compose.yml`) filled the 238G root SSD to 0B
+free. `immich_postgres` crash-looped (no space for WAL) and the download
+stalled ~6G short of completion. Operator decision (2026-07-21, choosing
+between relocating Immich vs Nextcloud data): move the **Immich library**
+to `/mnt/media/immich/library/` — Nextcloud is only 1.6G, so moving it
+would have freed nothing. `/mnt/media` has been ext4 since 2026-05-20, so
+the old "not /mnt/media, it's exfat" objection no longer applies. The
+postgres datadir stays on `/srv` (service-state tier).
+
+**Steps:** stop Immich stack → sudo `rsync -aH` library to
+`/mnt/media/immich/library/` (~37G) → verify with rsync dry-run itemize +
+file counts → `rm -rf /srv/immich/library` (frees 37G; the copy is the
+only copy — WORKLIST 8.2 restic still pending) → `git pull && deploy.sh
+immich` with the compose bind now `/mnt/media/immich/library:/usr/src/app/
+upload` → verify `photos.nthncrtr.com` + a photo loads → confirm the
+qBit download resumes.
+
+**Success criteria:** Immich healthy from the new path; `/` has ≥30G
+free; the Mad Men torrent completes and auto-moves to `/mnt/media`.
+
+**Rollback:** stop Immich, rsync the library back to
+`/srv/immich/library/`, revert the compose bind to `./library`, redeploy.
+(Only possible while `/` has ≥40G free — i.e. after the download cleared.)
+
+**Repo changes:** `services/immich/docker-compose.yml` (bind + header),
+`deploy.sh` (`deploy_immich` dir creation + capacity-guard comment),
+`services/backup/backup.sh` (drop the now-moot library exclude),
+`services/immich/README.md`, `runbooks/media-layout.md` (new top-level
+`immich/` subdir + storage-model exception), `CLAUDE.md`.
+
 ## Phase 9 — Self-hosted note-taking (Memos)
 
 ### 9.1 Memos — quick-capture notes + Homepage recent-notes widget  [SCAFFOLDED — deploy pending operator]

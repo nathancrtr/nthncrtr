@@ -28,16 +28,19 @@
 # 6.4/6.6). The gate is Immich's own per-user accounts + tailnet-only reach.
 # Don't put photos.nthncrtr.com behind Authelia.
 #
-# Data layout on natto (ALL on the Beelink's internal SSD — NOT the bulk 5TB
-# media drive; Immich's postgres + upload library are live service state and
-# belong on the /srv SSD tier, see runbooks/media-layout.md § "Storage model"):
-#   /srv/immich/library  → the photo/video library (UPLOAD_LOCATION)
-#   /srv/immich/db       → postgres datadir
-# CAPACITY CAVEAT: /srv had ~130 GB free when this was set up. A full Google
-# Photos archive can exceed that. Watch `df -h /` during/after the import; if
-# the archive is large this library may have to move to dedicated storage
-# (/mnt/media is the bulk-media tier, not sized/intended for it — see README).
-# This is a known, accepted-for-now risk recorded in WORKLIST 7.1.
+# Data layout on natto (split across tiers since 2026-07-21):
+#   /mnt/media/immich/library → the photo/video library (UPLOAD_LOCATION), on
+#                               the 5TB ext4 drive. Moved off /srv on
+#                               2026-07-21: the library (37G) + an in-flight
+#                               qBit download filled the 238G root SSD to 0B
+#                               free (immich_postgres crash-looped). The old
+#                               "capacity caveat" in earlier revisions of this
+#                               header predicted exactly this.
+#   /srv/immich/db            → postgres datadir — stays on the SSD tier
+#                               (live DB state; small).
+# The library bind is an absolute path (not ./library) because it now lives
+# outside the compose dir. Don't move it back to /srv without checking free
+# space first (`df -h /`).
 #
 # 2283 is Immich's server port (free on natto: 8080 gluetun, 8081 nextcloud,
 # 8053 pihole admin, 8096 jellyfin, 4533 navidrome, 3000 homepage). Published
@@ -61,7 +64,7 @@ services:
     ports:
       - "2283:2283"
     volumes:
-      - ./library:/usr/src/app/upload
+      - /mnt/media/immich/library:/usr/src/app/upload
       - /etc/localtime:/etc/localtime:ro
     environment:
       - DB_HOSTNAME=immich-db

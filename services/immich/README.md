@@ -13,7 +13,7 @@ deployed — see § Machine learning.
 | | Path |
 |---|---|
 | Compose | `/srv/immich/docker-compose.yml` |
-| Photo/video library (`UPLOAD_LOCATION`) | `/srv/immich/library/` |
+| Photo/video library (`UPLOAD_LOCATION`) | `/mnt/media/immich/library/` (on `/srv/immich/library/` until 2026-07-21 — see below) |
 | PostgreSQL datadir | `/srv/immich/db/` |
 | Secrets | `/srv/immich/secrets.env` (root:root, 0600, **not** in repo) |
 | Containers | `immich_server`, `immich_redis`, `immich_postgres` |
@@ -21,19 +21,21 @@ deployed — see § Machine learning.
 | Host port | `2283` → container `2283` (published on `0.0.0.0`) |
 | Reachability | **Tailnet-only** — `https://photos.nthncrtr.com` (Caddy), `http://natto.tailaf7ea6.ts.net:2283`, `http://natto:2283` |
 
-### Why internal disk, not the 5TB
+### Storage split (changed 2026-07-21)
 
-Immich's PostgreSQL datadir and its upload library are live service state, so
-both live on natto's SSD (`/srv/immich/`), per the repo-wide storage split —
-see `runbooks/media-layout.md` § "Storage model".
-
-> **Capacity caveat (read this).** `/srv` (the 238 GB SSD) had ~130 GB free
-> when Immich was set up. A full Google Photos archive can exceed that. Run
-> `df -h /` on natto during and after the Takeout import. If the library
-> outgrows the SSD it needs **dedicated storage**, not `/mnt/media` (that drive
-> is the bulk-media tier, not sized or intended for the Immich library) — so
-> don't "solve" a full disk by pointing `UPLOAD_LOCATION` there. Tracked in
-> WORKLIST 7.1.
+The PostgreSQL datadir is live service state and stays on natto's SSD
+(`/srv/immich/db/`). The **library moved to the 5TB drive**
+(`/mnt/media/immich/library/`) on 2026-07-21: the capacity caveat that used
+to live here came true — the 37G library plus an in-flight qBittorrent
+download (which stages on the SSD by design, see
+`services/qbittorrent/docker-compose.yml`) filled `/` to 0B free and
+crash-looped `immich_postgres`. Earlier revisions of this README said the
+library should get "dedicated storage, not /mnt/media"; that was written
+when `/mnt/media` was exfat. It has been ext4 since 2026-05-20, and the
+operator chose it as the library's home (2026-07-21) over buying a new
+drive. If a dedicated/NVMe tier ever materializes (the Beelink has an empty
+M.2 slot), the library can move again — it's a stop-Immich + rsync +
+compose-edit operation, same as the 2026-07-21 move.
 
 ### Why no Authelia (and why it's still safe)
 
@@ -66,8 +68,8 @@ sudo ./deploy.sh immich        # also in the default deploy set
 sudo ./deploy.sh caddy         # picks up the photos.nthncrtr.com vhost
 ```
 
-`deploy.sh` creates `/srv/immich/{library,db}` (root-owned, empty — the
-containers chown their own subtrees on first init), installs the compose
+`deploy.sh` creates `/srv/immich/db` and `/mnt/media/immich/library` (empty —
+the containers chown their own subtrees on first init), installs the compose
 file, warns if `secrets.env` is missing, brings the stack up, and probes
 `http://127.0.0.1:2283/api/server/ping`. First boot takes a minute or two
 while postgres initializes and Immich runs migrations.
@@ -91,8 +93,8 @@ Export via Google Takeout (Photos only; pick a sensible archive size).
 Recommended tool: **`immich-go`** (handles Takeout's split archives, JSON
 sidecar metadata and album reconstruction far better than the web uploader).
 Run it from a machine that can reach `http://natto.tailaf7ea6.ts.net:2283`
-with an API key. The library lands in `/srv/immich/library` — watch
-`df -h /` (see the capacity caveat above) before importing the full set.
+with an API key. The library lands in `/mnt/media/immich/library` — watch
+`df -h /mnt/media` before importing the full set.
 
 ## Machine learning
 
@@ -106,8 +108,9 @@ Immich run the "Smart Search" and "Face Detection" jobs over the library.
 
 ## Backups
 
-Half wired. The nightly natto tarball excludes the bulk paths
-(`/srv/immich/{library,db}`) and instead writes a logical `pg_dumpall` of
+Half wired. The nightly natto tarball excludes the postgres datadir
+(`/srv/immich/db`; the library is on `/mnt/media`, outside the tar's scope
+entirely) and instead writes a logical `pg_dumpall` of
 `immich_postgres` into `/srv/immich/db-dump.sql.gz` just before the tar
 runs — that file IS under `/srv` and so IS captured. The dump uses
 Immich's documented `pg_dumpall --clean --if-exists` recipe, which carries
@@ -115,17 +118,19 @@ the `CREATE EXTENSION` statements for VectorChord/pgvector so the restore
 is valid against the matching `ghcr.io/immich-app/postgres:*-vectorchord*-
 pgvectors*` image. See `services/backup/README.md § Restoring Immich`.
 
-What's still not backed up: **`/srv/immich/library`** (the actual photos
-and videos). It's intentionally excluded from the nightly tarball for the
-same size-class reason Nextcloud's `data/` is excluded — both are slated
-for the restic + Backblaze B2 redesign in WORKLIST 8.2. Until that lands
-the library is the only copy.
+What's still not backed up: **`/mnt/media/immich/library`** (the actual
+photos and videos). It's not in the nightly tarball for the same size-class
+reason Nextcloud's `data/` is excluded — both are slated for the restic +
+Backblaze B2 redesign in WORKLIST 8.2. Until that lands the library is the
+only copy — and since 2026-07-21 it shares a single spindle with the
+nightly tarballs, so a `/mnt/media` drive failure loses both.
 
 ## Rollback
 
 `cd /srv/immich && docker compose down` stops the stack (data in
-`/srv/immich/{library,db}` is preserved). To fully unwind: remove the
-`photos.nthncrtr.com` block from the Caddyfile + redeploy caddy, remove the
-Homepage entry, `docker compose down -v`, and `rm -rf /srv/immich`. Also
+`/srv/immich/db` and `/mnt/media/immich/library` is preserved). To fully
+unwind: remove the `photos.nthncrtr.com` block from the Caddyfile + redeploy
+caddy, remove the Homepage entry, `docker compose down -v`, and
+`rm -rf /srv/immich /mnt/media/immich`. Also
 delete the `photos` A record in the Cloudflare dashboard (there is no
 wildcard — it is a real per-subdomain record that must be removed by hand).

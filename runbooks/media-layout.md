@@ -15,6 +15,10 @@ storage-model and hardlink notes the service READMEs point back to. Lives at
                     tools/orpheus/upload/README.md for the upload pipeline.
 ├── video/        — movies/ + tv/, served read-only by Jellyfin (see § Jellyfin)
 ├── backups/      — natto-YYYY-MM-DD.tgz, written by services/backup
+├── immich/       — library/ = Immich's photo/video library (UPLOAD_LOCATION),
+                    moved here from the root SSD on 2026-07-21 after the disk
+                    filled. Live service state — the one exception to this
+                    drive's bulk-media/backup role. See services/immich/README.md.
 └── _unsorted/    — junk that landed on the drive over time (installer
                     artifacts, Seagate factory files, *arr installers, etc.)
                     Operator triages or deletes at leisure.
@@ -55,7 +59,7 @@ copy often with a garbled release-name title). Two rules follow:
 ## Mount details
 
 - Filesystem: **ext4** (`/dev/sda2`, `UUID=3d0d41ab-bb04-418d-a2b4-2afde44a3e50`), mounted `defaults,noatime,nodiratime` per `/etc/fstab`. The drive was reformatted exfat → ext4 on **2026-05-20** (`runbooks/reformat-mnt-media-to-ext4.sh`), *after* the 2026-05-16 host migration — the original Pi-era setup was exfat with `uid=1000,gid=1000` mount options, but ext4 + per-dir chown is now the model.
-- The mount root `/mnt/media` itself is owned `root:root`. Each top-level service subdir (`music/`, `seed-only/`, `video/`, `backups/`, `_unsorted/`) is `chown`ed to `nthncrtr:nthncrtr` at creation, so day-to-day operations (rsync from workhorse, qBit writes, etc.) don't need root. **Adding a new top-level subdir requires sudo**: `sudo mkdir -p /mnt/media/<new> && sudo chown nthncrtr:nthncrtr /mnt/media/<new>` (use the clipboard-paste sudo pattern from CLAUDE.md).
+- The mount root `/mnt/media` itself is owned `root:root`. Each top-level service subdir (`music/`, `seed-only/`, `video/`, `backups/`, `immich/`, `_unsorted/`) is `chown`ed to `nthncrtr:nthncrtr` at creation, so day-to-day operations (rsync from workhorse, qBit writes, etc.) don't need root. **Adding a new top-level subdir requires sudo**: `sudo mkdir -p /mnt/media/<new> && sudo chown nthncrtr:nthncrtr /mnt/media/<new>` (use the clipboard-paste sudo pattern from CLAUDE.md).
 - Read-only for the Navidrome and Jellyfin bind mounts: append `:ro`.
 
 ## Storage model — `/srv` vs `/mnt/media`
@@ -77,6 +81,12 @@ sit under `/srv/<svc>/` and not on the big drive. (Both filesystems are ext4
 now — the older docs justified this with "exfat can't do POSIX locking", which
 was true of the Pi-era exfat drive but no longer applies; the rationale is the
 SSD-vs-bulk split, not a filesystem-capability gap.)
+
+One deliberate exception since 2026-07-21: **Immich's photo/video library**
+(`/mnt/media/immich/library/` — bulk assets, not a database; its postgres
+stays on `/srv`). The library + an in-flight qBit download filled the 238G
+root SSD to 0B free, so the operator moved it here. It rides along on a cold
+migration like the rest of the drive.
 
 ## Hardlinks on import (the *arrs)
 

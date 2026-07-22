@@ -478,15 +478,17 @@ deploy_immich() {
   log "immich"
   local CHANGED=0
   (( DRY_RUN )) || {
-    # Parent + the two bind targets, on the internal SSD /srv (the service-
-    # state tier — NOT the bulk /mnt/media drive; see the compose header /
-    # README). Created root-owned and empty; the immich-server and
-    # postgres images chown their own subtrees on first init. Tailnet-only;
+    # Split tiers since 2026-07-21: the library lives on the 5TB /mnt/media
+    # drive (it outgrew the root SSD — see the compose header); the postgres
+    # datadir stays on /srv. Created root-owned and empty; the immich-server
+    # and postgres images chown their own subtrees on first init. Tailnet-only;
     # the photos.nthncrtr.com Caddyfile vhost is deployed via `deploy.sh
-    # caddy` (run it after this on first stand-up).
-    [[ -d /srv/immich ]]         || { install -d -o root -g root -m 0755 /srv/immich;         note "created /srv/immich"; }
-    [[ -d /srv/immich/library ]] || { install -d -o root -g root -m 0755 /srv/immich/library; note "created /srv/immich/library"; }
-    [[ -d /srv/immich/db ]]      || { install -d -o root -g root -m 0755 /srv/immich/db;      note "created /srv/immich/db"; }
+    # caddy` (run it after this on first stand-up). /mnt/media/immich itself
+    # is nthncrtr-owned like the other top-level media subdirs.
+    [[ -d /srv/immich ]]               || { install -d -o root -g root -m 0755 /srv/immich;               note "created /srv/immich"; }
+    [[ -d /srv/immich/db ]]            || { install -d -o root -g root -m 0755 /srv/immich/db;            note "created /srv/immich/db"; }
+    [[ -d /mnt/media/immich ]]         || { install -d -o nthncrtr -g nthncrtr -m 0755 /mnt/media/immich; note "created /mnt/media/immich"; }
+    [[ -d /mnt/media/immich/library ]] || { install -d -o root -g root -m 0755 /mnt/media/immich/library; note "created /mnt/media/immich/library"; }
   }
   install_file "$REPO_ROOT/services/immich/docker-compose.yml" /srv/immich/docker-compose.yml
   (( DRY_RUN )) && return 0
@@ -496,13 +498,14 @@ deploy_immich() {
     warn "/srv/immich/secrets.env not found — see services/immich/secrets.env.example"
     warn "Immich + postgres will not initialize until DB_PASSWORD/POSTGRES_PASSWORD are set (same value)."
   fi
-  # Capacity guard: the library lives on / (the 238G SSD). A full Google
-  # Photos import can be large; a full / silently breaks more than Immich
-  # (see CLAUDE.md § disk space). Warn under ~20G free.
+  # Capacity guard: the postgres datadir lives on / (the 238G SSD); a full /
+  # silently breaks more than Immich (see CLAUDE.md § disk space) — it crash-
+  # looped immich_postgres on 2026-07-21. The library itself is on /mnt/media
+  # since that date. Warn under ~20G free on /.
   local avail_g
   avail_g=$(df -BG --output=avail / 2>/dev/null | tail -1 | tr -dc '0-9')
   if [[ -n $avail_g && $avail_g -lt 20 ]]; then
-    warn "only ${avail_g}G free on / — Immich library is on the SSD; watch capacity (README § caveat)"
+    warn "only ${avail_g}G free on / — Immich postgres is on the SSD; watch capacity (README § caveat)"
   fi
   compose_up immich
   sleep 5
